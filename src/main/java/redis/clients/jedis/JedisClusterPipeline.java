@@ -242,9 +242,8 @@ public class JedisClusterPipeline extends PipelineBase implements CommandListene
           retries.add(operation);
         } catch (JedisException e) {
           operation.setError(e);
-
           // No more retries, connection may corrupt
-          releaseConnection(operation.getConnection());
+          break;
         }
       }
 
