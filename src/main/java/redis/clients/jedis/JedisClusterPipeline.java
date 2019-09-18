@@ -12,14 +12,14 @@ import redis.clients.jedis.exceptions.JedisAskDataException;
 import redis.clients.jedis.exceptions.JedisClusterException;
 import redis.clients.jedis.exceptions.JedisException;
 import redis.clients.jedis.exceptions.JedisMovedDataException;
-import redis.clients.util.JedisClusterCRC16;
+import redis.clients.jedis.util.JedisClusterCRC16;
 
 /**
  * This implementation is based on the facts that class "redis.clients.jedis.PipelineBase" is
  * implemented in this way.
  * 
  * <pre>
- * public Response<String> get(String key) {
+ * public Response&lt;String&gt; get(String key) {
  *   getClient(key).get(key);
  *   return getResponse(BuilderFactory.STRING);
  * }

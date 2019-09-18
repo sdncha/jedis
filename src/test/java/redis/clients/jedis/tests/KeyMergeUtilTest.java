@@ -1,10 +1,12 @@
 package redis.clients.jedis.tests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import org.junit.Test;
 
-import redis.clients.util.KeyMergeUtil;
-import redis.clients.util.SafeEncoder;
-import static org.junit.Assert.*;
+import redis.clients.jedis.util.KeyMergeUtil;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class KeyMergeUtilTest {
 

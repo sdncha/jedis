@@ -10,12 +10,12 @@ import org.junit.Test;
 import redis.clients.jedis.Module;
 import redis.clients.jedis.commands.ProtocolCommand;
 import redis.clients.jedis.tests.commands.JedisCommandTestBase;
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class ModuleTest extends JedisCommandTestBase {
 
   static enum ModuleCommand implements ProtocolCommand {
-    SIMPLE("testmodule.simple")  ;
+    SIMPLE("testmodule.simple");
 
     private final byte[] raw;
 
@@ -25,25 +25,25 @@ public class ModuleTest extends JedisCommandTestBase {
 
     @Override
     public byte[] getRaw() {
-      return SafeEncoder.encode("testmodule.simple");
+      return raw;
     }
   }
 
   @Test
   public void testModules() {
     String res = jedis.moduleLoad("/tmp/testmodule.so");
-    assertEquals(res, "OK");
+    assertEquals("OK", res);
 
     List<Module> modules = jedis.moduleList();
 
-    assertEquals(modules.get(0).getName(), "testmodule");
+    assertEquals("testmodule", modules.get(0).getName());
 
     jedis.getClient().sendCommand(ModuleCommand.SIMPLE);
     Long out = jedis.getClient().getIntegerReply();
     assertTrue(out > 0);
 
     res = jedis.moduleUnload("testmodule");
-    assertEquals(res, "OK");
+    assertEquals("OK", res);
   }
 
 }

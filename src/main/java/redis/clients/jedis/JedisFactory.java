@@ -13,7 +13,7 @@ import org.apache.commons.pool2.impl.DefaultPooledObject;
 
 import redis.clients.jedis.exceptions.InvalidURIException;
 import redis.clients.jedis.exceptions.JedisException;
-import redis.clients.util.JedisURIHelper;
+import redis.clients.jedis.util.JedisURIHelper;
 
 /**
  * PoolableObjectFactory custom impl.
@@ -27,12 +27,18 @@ class JedisFactory implements PooledObjectFactory<Jedis> {
   private final String clientName;
   private final boolean ssl;
   private final SSLSocketFactory sslSocketFactory;
-  private SSLParameters sslParameters;
-  private HostnameVerifier hostnameVerifier;
+  private final SSLParameters sslParameters;
+  private final HostnameVerifier hostnameVerifier;
 
-  public JedisFactory(final String host, final int port, final int connectionTimeout,
-      final int soTimeout, final String password, final int database, final String clientName,
-      final boolean ssl, final SSLSocketFactory sslSocketFactory, final SSLParameters sslParameters,
+  JedisFactory(final String host, final int port, final int connectionTimeout, final int soTimeout,
+      final String password, final int database, final String clientName) {
+    this(host, port, connectionTimeout, soTimeout, password, database, clientName, false, null,
+        null, null);
+  }
+
+  JedisFactory(final String host, final int port, final int connectionTimeout, final int soTimeout,
+      final String password, final int database, final String clientName, final boolean ssl,
+      final SSLSocketFactory sslSocketFactory, final SSLParameters sslParameters,
       final HostnameVerifier hostnameVerifier) {
     this.hostAndPort.set(new HostAndPort(host, port));
     this.connectionTimeout = connectionTimeout;
@@ -46,8 +52,13 @@ class JedisFactory implements PooledObjectFactory<Jedis> {
     this.hostnameVerifier = hostnameVerifier;
   }
 
-  public JedisFactory(final URI uri, final int connectionTimeout, final int soTimeout,
-      final String clientName, final boolean ssl, final SSLSocketFactory sslSocketFactory,
+  JedisFactory(final URI uri, final int connectionTimeout, final int soTimeout,
+      final String clientName) {
+    this(uri, connectionTimeout, soTimeout, clientName, null, null, null);
+  }
+
+  JedisFactory(final URI uri, final int connectionTimeout, final int soTimeout,
+      final String clientName, final SSLSocketFactory sslSocketFactory,
       final SSLParameters sslParameters, final HostnameVerifier hostnameVerifier) {
     if (!JedisURIHelper.isValid(uri)) {
       throw new InvalidURIException(String.format(
@@ -60,7 +71,7 @@ class JedisFactory implements PooledObjectFactory<Jedis> {
     this.password = JedisURIHelper.getPassword(uri);
     this.database = JedisURIHelper.getDBIndex(uri);
     this.clientName = clientName;
-    this.ssl = ssl;
+    this.ssl = JedisURIHelper.isRedisSSLScheme(uri);
     this.sslSocketFactory = sslSocketFactory;
     this.sslParameters = sslParameters;
     this.hostnameVerifier = hostnameVerifier;

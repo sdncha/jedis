@@ -1,17 +1,17 @@
 package redis.clients.jedis;
 
 import java.util.Arrays;
+import java.util.Objects;
 
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.util.ByteArrayComparator;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class Tuple implements Comparable<Tuple> {
   private byte[] element;
   private Double score;
 
   public Tuple(String element, Double score) {
-    super();
-    this.element = SafeEncoder.encode(element);
-    this.score = score;
+    this(SafeEncoder.encode(element), score);
   }
 
   public Tuple(byte[] element, Double score) {
@@ -30,28 +30,32 @@ public class Tuple implements Comparable<Tuple> {
         result = prime * result + b;
       }
     }
-    long temp;
-    temp = Double.doubleToLongBits(score);
+    long temp = Double.doubleToLongBits(score);
     result = prime * result + (int) (temp ^ (temp >>> 32));
     return result;
   }
 
   @Override
   public boolean equals(Object obj) {
-    if (this == obj) return true;
     if (obj == null) return false;
-    if (getClass() != obj.getClass()) return false;
+    if (obj == this) return true;
+    if (!(obj instanceof Tuple)) return false;
+
     Tuple other = (Tuple) obj;
-    if (element == null) {
-      if (other.element != null) return false;
-    } else if (!Arrays.equals(element, other.element)) return false;
-    return true;
+    if (!Arrays.equals(element, other.element)) return false;
+    return Objects.equals(score, other.score);
   }
 
   @Override
   public int compareTo(Tuple other) {
-    if (this.score == other.getScore() || Arrays.equals(this.element, other.element)) return 0;
-    else return this.score < other.getScore() ? -1 : 1;
+    return compare(this, other);
+  }
+
+  public static int compare(Tuple t1, Tuple t2) {
+    int compScore = Double.compare(t1.score, t2.score);
+    if (compScore != 0) return compScore;
+
+    return ByteArrayComparator.compare(t1.element, t2.element);
   }
 
   public String getElement() {
@@ -72,6 +76,6 @@ public class Tuple implements Comparable<Tuple> {
 
   @Override
   public String toString() {
-    return '[' + Arrays.toString(element) + ',' + score + ']';
+    return '[' + SafeEncoder.encode(element) + ',' + score + ']';
   }
 }

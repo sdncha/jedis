@@ -12,13 +12,13 @@ import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocketFactory;
 
-import redis.clients.jedis.JedisCluster.Reset;
 import redis.clients.jedis.commands.Commands;
-import redis.clients.jedis.params.geo.GeoRadiusParam;
-import redis.clients.jedis.params.set.SetParams;
-import redis.clients.jedis.params.sortedset.ZAddParams;
-import redis.clients.jedis.params.sortedset.ZIncrByParams;
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.params.GeoRadiusParam;
+import redis.clients.jedis.params.MigrateParams;
+import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
+import redis.clients.jedis.params.ZIncrByParams;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class Client extends BinaryClient implements Commands {
 
@@ -45,6 +45,11 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
+  public void ping(final String message) {
+    ping(SafeEncoder.encode(message));
+  }
+
+  @Override
   public void set(final String key, final String value) {
     set(SafeEncoder.encode(key), SafeEncoder.encode(value));
   }
@@ -60,22 +65,18 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void exists(final String key) {
-    exists(SafeEncoder.encode(key));
+  public void exists(final String... keys) {
+    exists(SafeEncoder.encodeMany(keys));
   }
 
   @Override
-  public void exists(final String... keys) {
-    final byte[][] bkeys = SafeEncoder.encodeMany(keys);
-    exists(bkeys);
+  public void del(final String... keys) {
+    del(SafeEncoder.encodeMany(keys));
   }
 
-  public void del(final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < keys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    del(bkeys);
+  @Override
+  public void unlink(final String... keys) {
+    unlink(SafeEncoder.encodeMany(keys));
   }
 
   @Override
@@ -114,6 +115,11 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
+  public void touch(final String... keys) {
+    touch(SafeEncoder.encodeMany(keys));
+  }
+
+  @Override
   public void move(final String key, final int dbIndex) {
     move(SafeEncoder.encode(key), dbIndex);
   }
@@ -125,11 +131,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void mget(final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    mget(bkeys);
+    mget(SafeEncoder.encodeMany(keys));
   }
 
   @Override
@@ -144,25 +146,17 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void mset(final String... keysvalues) {
-    final byte[][] bkeysvalues = new byte[keysvalues.length][];
-    for (int i = 0; i < keysvalues.length; i++) {
-      bkeysvalues[i] = SafeEncoder.encode(keysvalues[i]);
-    }
-    mset(bkeysvalues);
+    mset(SafeEncoder.encodeMany(keysvalues));
   }
 
   @Override
   public void msetnx(final String... keysvalues) {
-    final byte[][] bkeysvalues = new byte[keysvalues.length][];
-    for (int i = 0; i < keysvalues.length; i++) {
-      bkeysvalues[i] = SafeEncoder.encode(keysvalues[i]);
-    }
-    msetnx(bkeysvalues);
+    msetnx(SafeEncoder.encodeMany(keysvalues));
   }
 
   @Override
-  public void decrBy(final String key, final long integer) {
-    decrBy(SafeEncoder.encode(key), integer);
+  public void decrBy(final String key, final long decrement) {
+    decrBy(SafeEncoder.encode(key), decrement);
   }
 
   @Override
@@ -171,8 +165,8 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void incrBy(final String key, final long integer) {
-    incrBy(SafeEncoder.encode(key), integer);
+  public void incrBy(final String key, final long increment) {
+    incrBy(SafeEncoder.encode(key), increment);
   }
 
   @Override
@@ -196,6 +190,15 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
+  public void hset(final String key, final Map<String, String> hash) {
+    final Map<byte[], byte[]> bhash = new HashMap<byte[], byte[]>(hash.size());
+    for (final Entry<String, String> entry : hash.entrySet()) {
+      bhash.put(SafeEncoder.encode(entry.getKey()), SafeEncoder.encode(entry.getValue()));
+    }
+    hset(SafeEncoder.encode(key), bhash);
+  }
+
+  @Override
   public void hget(final String key, final String field) {
     hget(SafeEncoder.encode(key), SafeEncoder.encode(field));
   }
@@ -216,11 +219,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void hmget(final String key, final String... fields) {
-    final byte[][] bfields = new byte[fields.length][];
-    for (int i = 0; i < bfields.length; i++) {
-      bfields[i] = SafeEncoder.encode(fields[i]);
-    }
-    hmget(SafeEncoder.encode(key), bfields);
+    hmget(SafeEncoder.encode(key), SafeEncoder.encodeMany(fields));
   }
 
   @Override
@@ -274,13 +273,13 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void lrange(final String key, final long start, final long end) {
-    lrange(SafeEncoder.encode(key), start, end);
+  public void lrange(final String key, final long start, final long stop) {
+    lrange(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
-  public void ltrim(final String key, final long start, final long end) {
-    ltrim(SafeEncoder.encode(key), start, end);
+  public void ltrim(final String key, final long start, final long stop) {
+    ltrim(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
@@ -294,7 +293,7 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void lrem(final String key, long count, final String value) {
+  public void lrem(final String key, final long count, final String value) {
     lrem(SafeEncoder.encode(key), count, SafeEncoder.encode(value));
   }
 
@@ -355,56 +354,32 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void sinter(final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sinter(bkeys);
+    sinter(SafeEncoder.encodeMany(keys));
   }
 
   @Override
   public void sinterstore(final String dstkey, final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sinterstore(SafeEncoder.encode(dstkey), bkeys);
+    sinterstore(SafeEncoder.encode(dstkey), SafeEncoder.encodeMany(keys));
   }
 
   @Override
   public void sunion(final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sunion(bkeys);
+    sunion(SafeEncoder.encodeMany(keys));
   }
 
   @Override
   public void sunionstore(final String dstkey, final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sunionstore(SafeEncoder.encode(dstkey), bkeys);
+    sunionstore(SafeEncoder.encode(dstkey), SafeEncoder.encodeMany(keys));
   }
 
   @Override
   public void sdiff(final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sdiff(bkeys);
+    sdiff(SafeEncoder.encodeMany(keys));
   }
 
   @Override
   public void sdiffstore(final String dstkey, final String... keys) {
-    final byte[][] bkeys = new byte[keys.length][];
-    for (int i = 0; i < bkeys.length; i++) {
-      bkeys[i] = SafeEncoder.encode(keys[i]);
-    }
-    sdiffstore(SafeEncoder.encode(dstkey), bkeys);
+    sdiffstore(SafeEncoder.encode(dstkey), SafeEncoder.encodeMany(keys));
   }
 
   @Override
@@ -424,7 +399,7 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void zadd(String key, Map<String, Double> scoreMembers) {
+  public void zadd(final String key, final Map<String, Double> scoreMembers) {
     HashMap<byte[], Double> binaryScoreMembers = convertScoreMembersToBinary(scoreMembers);
     zadd(SafeEncoder.encode(key), binaryScoreMembers);
   }
@@ -436,8 +411,8 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void zrange(final String key, final long start, final long end) {
-    zrange(SafeEncoder.encode(key), start, end);
+  public void zrange(final String key, final long start, final long stop) {
+    zrange(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
@@ -446,13 +421,14 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void zincrby(final String key, final double score, final String member) {
-    zincrby(SafeEncoder.encode(key), score, SafeEncoder.encode(member));
+  public void zincrby(final String key, final double increment, final String member) {
+    zincrby(SafeEncoder.encode(key), increment, SafeEncoder.encode(member));
   }
 
   @Override
-  public void zincrby(String key, double score, String member, ZIncrByParams params) {
-    zincrby(SafeEncoder.encode(key), score, SafeEncoder.encode(member), params);
+  public void zincrby(final String key, final double increment, final String member,
+      final ZIncrByParams params) {
+    zincrby(SafeEncoder.encode(key), increment, SafeEncoder.encode(member), params);
   }
 
   @Override
@@ -466,18 +442,18 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void zrevrange(final String key, final long start, final long end) {
-    zrevrange(SafeEncoder.encode(key), start, end);
+  public void zrevrange(final String key, final long start, final long stop) {
+    zrevrange(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
-  public void zrangeWithScores(final String key, final long start, final long end) {
-    zrangeWithScores(SafeEncoder.encode(key), start, end);
+  public void zrangeWithScores(final String key, final long start, final long stop) {
+    zrangeWithScores(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
-  public void zrevrangeWithScores(final String key, final long start, final long end) {
-    zrevrangeWithScores(SafeEncoder.encode(key), start, end);
+  public void zrevrangeWithScores(final String key, final long start, final long stop) {
+    zrevrangeWithScores(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
@@ -492,11 +468,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void watch(final String... keys) {
-    final byte[][] bargs = new byte[keys.length][];
-    for (int i = 0; i < bargs.length; i++) {
-      bargs[i] = SafeEncoder.encode(keys[i]);
-    }
-    watch(bargs);
+    watch(SafeEncoder.encodeMany(keys));
   }
 
   @Override
@@ -511,11 +483,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void blpop(final String[] args) {
-    final byte[][] bargs = new byte[args.length][];
-    for (int i = 0; i < bargs.length; i++) {
-      bargs[i] = SafeEncoder.encode(args[i]);
-    }
-    blpop(bargs);
+    blpop(SafeEncoder.encodeMany(args));
   }
 
   public void blpop(final int timeout, final String... keys) {
@@ -540,11 +508,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void brpop(final String[] args) {
-    final byte[][] bargs = new byte[args.length][];
-    for (int i = 0; i < bargs.length; i++) {
-      bargs[i] = SafeEncoder.encode(args[i]);
-    }
-    brpop(bargs);
+    brpop(SafeEncoder.encodeMany(args));
   }
 
   public void brpop(final int timeout, final String... keys) {
@@ -579,7 +543,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void zrangeByScore(final String key, final double min, final double max, final int offset,
-      int count) {
+      final int count) {
     zrangeByScore(SafeEncoder.encode(key), toByteArray(min), toByteArray(max), offset, count);
   }
 
@@ -600,8 +564,9 @@ public class Client extends BinaryClient implements Commands {
     zrevrangeByScore(SafeEncoder.encode(key), toByteArray(max), toByteArray(min));
   }
 
+  @Override
   public void zrangeByScore(final String key, final String min, final String max, final int offset,
-      int count) {
+      final int count) {
     zrangeByScore(SafeEncoder.encode(key), SafeEncoder.encode(min), SafeEncoder.encode(max),
       offset, count);
   }
@@ -626,12 +591,13 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void zrevrangeByScore(final String key, final double max, final double min,
-      final int offset, int count) {
+      final int offset, final int count) {
     zrevrangeByScore(SafeEncoder.encode(key), toByteArray(max), toByteArray(min), offset, count);
   }
 
+  @Override
   public void zrevrangeByScore(final String key, final String max, final String min,
-      final int offset, int count) {
+      final int offset, final int count) {
     zrevrangeByScore(SafeEncoder.encode(key), SafeEncoder.encode(max), SafeEncoder.encode(min),
       offset, count);
   }
@@ -662,54 +628,38 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void zremrangeByRank(final String key, final long start, final long end) {
-    zremrangeByRank(SafeEncoder.encode(key), start, end);
+  public void zremrangeByRank(final String key, final long start, final long stop) {
+    zremrangeByRank(SafeEncoder.encode(key), start, stop);
   }
 
   @Override
-  public void zremrangeByScore(final String key, final double start, final double end) {
-    zremrangeByScore(SafeEncoder.encode(key), toByteArray(start), toByteArray(end));
+  public void zremrangeByScore(final String key, final double min, final double max) {
+    zremrangeByScore(SafeEncoder.encode(key), toByteArray(min), toByteArray(max));
   }
 
   @Override
-  public void zremrangeByScore(final String key, final String start, final String end) {
-    zremrangeByScore(SafeEncoder.encode(key), SafeEncoder.encode(start), SafeEncoder.encode(end));
+  public void zremrangeByScore(final String key, final String min, final String max) {
+    zremrangeByScore(SafeEncoder.encode(key), SafeEncoder.encode(min), SafeEncoder.encode(max));
   }
 
   @Override
   public void zunionstore(final String dstkey, final String... sets) {
-    final byte[][] bsets = new byte[sets.length][];
-    for (int i = 0; i < bsets.length; i++) {
-      bsets[i] = SafeEncoder.encode(sets[i]);
-    }
-    zunionstore(SafeEncoder.encode(dstkey), bsets);
+    zunionstore(SafeEncoder.encode(dstkey), SafeEncoder.encodeMany(sets));
   }
 
   @Override
   public void zunionstore(final String dstkey, final ZParams params, final String... sets) {
-    final byte[][] bsets = new byte[sets.length][];
-    for (int i = 0; i < bsets.length; i++) {
-      bsets[i] = SafeEncoder.encode(sets[i]);
-    }
-    zunionstore(SafeEncoder.encode(dstkey), params, bsets);
+    zunionstore(SafeEncoder.encode(dstkey), params, SafeEncoder.encodeMany(sets));
   }
 
   @Override
   public void zinterstore(final String dstkey, final String... sets) {
-    final byte[][] bsets = new byte[sets.length][];
-    for (int i = 0; i < bsets.length; i++) {
-      bsets[i] = SafeEncoder.encode(sets[i]);
-    }
-    zinterstore(SafeEncoder.encode(dstkey), bsets);
+    zinterstore(SafeEncoder.encode(dstkey), SafeEncoder.encodeMany(sets));
   }
 
   @Override
   public void zinterstore(final String dstkey, final ZParams params, final String... sets) {
-    final byte[][] bsets = new byte[sets.length][];
-    for (int i = 0; i < bsets.length; i++) {
-      bsets[i] = SafeEncoder.encode(sets[i]);
-    }
-    zinterstore(SafeEncoder.encode(dstkey), params, bsets);
+    zinterstore(SafeEncoder.encode(dstkey), params, SafeEncoder.encodeMany(sets));
   }
 
   public void zlexcount(final String key, final String min, final String max) {
@@ -726,11 +676,12 @@ public class Client extends BinaryClient implements Commands {
       count);
   }
 
-  public void zrevrangeByLex(String key, String max, String min) {
+  public void zrevrangeByLex(final String key, final String max, final String min) {
     zrevrangeByLex(SafeEncoder.encode(key), SafeEncoder.encode(max), SafeEncoder.encode(min));
   }
 
-  public void zrevrangeByLex(String key, String max, String min, int offset, int count) {
+  public void zrevrangeByLex(final String key, final String max, final String min,
+      final int offset, final int count) {
     zrevrangeByLex(SafeEncoder.encode(key), SafeEncoder.encode(max), SafeEncoder.encode(min),
       offset, count);
   }
@@ -746,7 +697,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void lpushx(final String key, final String... string) {
-    lpushx(SafeEncoder.encode(key), getByteParams(string));
+    lpushx(SafeEncoder.encode(key), SafeEncoder.encodeMany(string));
   }
 
   @Override
@@ -756,7 +707,7 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void rpushx(final String key, final String... string) {
-    rpushx(SafeEncoder.encode(key), getByteParams(string));
+    rpushx(SafeEncoder.encode(key), SafeEncoder.encodeMany(string));
   }
 
   @Override
@@ -765,13 +716,13 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void linsert(final String key, final LIST_POSITION where, final String pivot,
+  public void linsert(final String key, final ListPosition where, final String pivot,
       final String value) {
     linsert(SafeEncoder.encode(key), where, SafeEncoder.encode(pivot), SafeEncoder.encode(value));
   }
 
   @Override
-  public void brpoplpush(String source, String destination, int timeout) {
+  public void brpoplpush(final String source, final String destination, final int timeout) {
     brpoplpush(SafeEncoder.encode(source), SafeEncoder.encode(destination), timeout);
   }
 
@@ -786,7 +737,7 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void getbit(String key, long offset) {
+  public void getbit(final String key, final long offset) {
     getbit(SafeEncoder.encode(key), offset);
   }
 
@@ -795,12 +746,12 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void setrange(String key, long offset, String value) {
+  public void setrange(final String key, final long offset, final String value) {
     setrange(SafeEncoder.encode(key), offset, SafeEncoder.encode(value));
   }
 
   @Override
-  public void getrange(String key, long startOffset, long endOffset) {
+  public void getrange(final String key, final long startOffset, final long endOffset) {
     getrange(SafeEncoder.encode(key), startOffset, endOffset);
   }
 
@@ -809,38 +760,22 @@ public class Client extends BinaryClient implements Commands {
   }
 
   public void unsubscribe(final String... channels) {
-    final byte[][] cs = new byte[channels.length][];
-    for (int i = 0; i < cs.length; i++) {
-      cs[i] = SafeEncoder.encode(channels[i]);
-    }
-    unsubscribe(cs);
+    unsubscribe(SafeEncoder.encodeMany(channels));
   }
 
   public void psubscribe(final String... patterns) {
-    final byte[][] ps = new byte[patterns.length][];
-    for (int i = 0; i < ps.length; i++) {
-      ps[i] = SafeEncoder.encode(patterns[i]);
-    }
-    psubscribe(ps);
+    psubscribe(SafeEncoder.encodeMany(patterns));
   }
 
   public void punsubscribe(final String... patterns) {
-    final byte[][] ps = new byte[patterns.length][];
-    for (int i = 0; i < ps.length; i++) {
-      ps[i] = SafeEncoder.encode(patterns[i]);
-    }
-    punsubscribe(ps);
+    punsubscribe(SafeEncoder.encodeMany(patterns));
   }
 
   public void subscribe(final String... channels) {
-    final byte[][] cs = new byte[channels.length][];
-    for (int i = 0; i < cs.length; i++) {
-      cs[i] = SafeEncoder.encode(channels[i]);
-    }
-    subscribe(cs);
+    subscribe(SafeEncoder.encodeMany(channels));
   }
 
-  public void pubsubChannels(String pattern) {
+  public void pubsubChannels(final String pattern) {
     pubsub(Protocol.PUBSUB_CHANNELS, pattern);
   }
 
@@ -848,52 +783,48 @@ public class Client extends BinaryClient implements Commands {
     pubsub(Protocol.PUBSUB_NUM_PAT);
   }
 
-  public void pubsubNumSub(String... channels) {
+  public void pubsubNumSub(final String... channels) {
     pubsub(Protocol.PUBSUB_NUMSUB, channels);
   }
 
   @Override
-  public void configSet(String parameter, String value) {
+  public void configSet(final String parameter, final String value) {
     configSet(SafeEncoder.encode(parameter), SafeEncoder.encode(value));
   }
 
   @Override
-  public void configGet(String pattern) {
+  public void configGet(final String pattern) {
     configGet(SafeEncoder.encode(pattern));
   }
 
-  public void eval(String script, int keyCount, String... params) {
-    eval(SafeEncoder.encode(script), toByteArray(keyCount), getByteParams(params));
+  public void eval(final String script, final int keyCount, final String... params) {
+    eval(SafeEncoder.encode(script), toByteArray(keyCount), SafeEncoder.encodeMany(params));
   }
 
-  public void evalsha(String sha1, int keyCount, String... params) {
-    evalsha(SafeEncoder.encode(sha1), toByteArray(keyCount), getByteParams(params));
+  public void evalsha(final String sha1, final int keyCount, final String... params) {
+    evalsha(SafeEncoder.encode(sha1), toByteArray(keyCount), SafeEncoder.encodeMany(params));
   }
 
-  public void scriptExists(String... sha1) {
-    final byte[][] bsha1 = new byte[sha1.length][];
-    for (int i = 0; i < bsha1.length; i++) {
-      bsha1[i] = SafeEncoder.encode(sha1[i]);
-    }
-    scriptExists(bsha1);
+  public void scriptExists(final String... sha1) {
+    scriptExists(SafeEncoder.encodeMany(sha1));
   }
 
-  public void scriptLoad(String script) {
+  public void scriptLoad(final String script) {
     scriptLoad(SafeEncoder.encode(script));
   }
 
   @Override
-  public void objectRefcount(String key) {
+  public void objectRefcount(final String key) {
     objectRefcount(SafeEncoder.encode(key));
   }
 
   @Override
-  public void objectIdletime(String key) {
+  public void objectIdletime(final String key) {
     objectIdletime(SafeEncoder.encode(key));
   }
 
   @Override
-  public void objectEncoding(String key) {
+  public void objectEncoding(final String key) {
     objectEncoding(SafeEncoder.encode(key));
   }
 
@@ -903,29 +834,32 @@ public class Client extends BinaryClient implements Commands {
   }
 
   @Override
-  public void bitcount(final String key, long start, long end) {
+  public void bitcount(final String key, final long start, final long end) {
     bitcount(SafeEncoder.encode(key), start, end);
   }
 
   @Override
-  public void bitop(BitOP op, final String destKey, String... srcKeys) {
-    bitop(op, SafeEncoder.encode(destKey), getByteParams(srcKeys));
+  public void bitop(final BitOP op, final String destKey, final String... srcKeys) {
+    bitop(op, SafeEncoder.encode(destKey), SafeEncoder.encodeMany(srcKeys));
   }
 
   public void sentinel(final String... args) {
-    final byte[][] arg = new byte[args.length][];
-    for (int i = 0; i < arg.length; i++) {
-      arg[i] = SafeEncoder.encode(args[i]);
-    }
-    sentinel(arg);
+    sentinel(SafeEncoder.encodeMany(args));
   }
 
+  @Override
   public void dump(final String key) {
     dump(SafeEncoder.encode(key));
   }
 
+  @Override
   public void restore(final String key, final int ttl, final byte[] serializedValue) {
     restore(SafeEncoder.encode(key), ttl, serializedValue);
+  }
+
+  @Override
+  public void restoreReplace(final String key, final int ttl, final byte[] serializedValue) {
+    restoreReplace(SafeEncoder.encode(key), ttl, serializedValue);
   }
 
   public void pexpire(final String key, final long milliseconds) {
@@ -936,6 +870,7 @@ public class Client extends BinaryClient implements Commands {
     pexpireAt(SafeEncoder.encode(key), millisecondsTimestamp);
   }
 
+  @Override
   public void pttl(final String key) {
     pttl(SafeEncoder.encode(key));
   }
@@ -953,21 +888,28 @@ public class Client extends BinaryClient implements Commands {
     srandmember(SafeEncoder.encode(key), count);
   }
 
-  public void clientKill(final String client) {
-    clientKill(SafeEncoder.encode(client));
+  public void clientKill(final String ipPort) {
+    clientKill(SafeEncoder.encode(ipPort));
   }
 
   public void clientSetname(final String name) {
     clientSetname(SafeEncoder.encode(name));
   }
 
+  @Override
   public void migrate(final String host, final int port, final String key, final int destinationDb,
       final int timeout) {
-    migrate(SafeEncoder.encode(host), port, SafeEncoder.encode(key), destinationDb, timeout);
+    migrate(host, port, SafeEncoder.encode(key), destinationDb, timeout);
   }
 
   @Override
-  public void hincrByFloat(final String key, final String field, double increment) {
+  public void migrate(final String host, final int port, final int destinationDB,
+      final int timeout, final MigrateParams params, String... keys) {
+    migrate(host, port, destinationDB, timeout, params, SafeEncoder.encodeMany(keys));
+  }
+
+  @Override
+  public void hincrByFloat(final String key, final String field, final double increment) {
     hincrByFloat(SafeEncoder.encode(key), SafeEncoder.encode(field), increment);
   }
 
@@ -1032,8 +974,8 @@ public class Client extends BinaryClient implements Commands {
     cluster(Protocol.CLUSTER_MEET, ip, String.valueOf(port));
   }
 
-  public void clusterReset(Reset resetType) {
-    cluster(Protocol.CLUSTER_RESET, resetType.toString());
+  public void clusterReset(final ClusterReset resetType) {
+    cluster(Protocol.CLUSTER_RESET, resetType.name());
   }
 
   public void clusterAddSlots(final int... slots) {
@@ -1067,7 +1009,7 @@ public class Client extends BinaryClient implements Commands {
       nodeId);
   }
 
-  public void pfadd(String key, final String... elements) {
+  public void pfadd(final String key, final String... elements) {
     pfadd(SafeEncoder.encode(key), SafeEncoder.encodeMany(elements));
   }
 
@@ -1123,69 +1065,83 @@ public class Client extends BinaryClient implements Commands {
     cluster(Protocol.CLUSTER_SLOTS);
   }
 
-  public void geoadd(String key, double longitude, double latitude, String member) {
+  public void geoadd(final String key, final double longitude, final double latitude,
+      final String member) {
     geoadd(SafeEncoder.encode(key), longitude, latitude, SafeEncoder.encode(member));
   }
 
-  public void geoadd(String key, Map<String, GeoCoordinate> memberCoordinateMap) {
+  public void geoadd(final String key, final Map<String, GeoCoordinate> memberCoordinateMap) {
     geoadd(SafeEncoder.encode(key), convertMemberCoordinateMapToBinary(memberCoordinateMap));
   }
 
-  public void geodist(String key, String member1, String member2) {
+  public void geodist(final String key, final String member1, final String member2) {
     geodist(SafeEncoder.encode(key), SafeEncoder.encode(member1), SafeEncoder.encode(member2));
   }
 
-  public void geodist(String key, String member1, String member2, GeoUnit unit) {
+  public void geodist(final String key, final String member1, final String member2,
+      final GeoUnit unit) {
     geodist(SafeEncoder.encode(key), SafeEncoder.encode(member1), SafeEncoder.encode(member2), unit);
   }
 
-  public void geohash(String key, String... members) {
+  public void geohash(final String key, final String... members) {
     geohash(SafeEncoder.encode(key), SafeEncoder.encodeMany(members));
   }
 
-  public void geopos(String key, String[] members) {
+  public void geopos(final String key, final String[] members) {
     geopos(SafeEncoder.encode(key), SafeEncoder.encodeMany(members));
   }
 
-  public void georadius(String key, double longitude, double latitude, double radius, GeoUnit unit) {
+  public void georadius(final String key, final double longitude, final double latitude,
+      final double radius, final GeoUnit unit) {
     georadius(SafeEncoder.encode(key), longitude, latitude, radius, unit);
   }
 
-  public void georadius(String key, double longitude, double latitude, double radius, GeoUnit unit,
-      GeoRadiusParam param) {
+  public void georadiusReadonly(final String key, final double longitude, final double latitude,
+      final double radius, final GeoUnit unit) {
+    georadiusReadonly(SafeEncoder.encode(key), longitude, latitude, radius, unit);
+  }
+
+  public void georadius(final String key, final double longitude, final double latitude,
+      final double radius, final GeoUnit unit, final GeoRadiusParam param) {
     georadius(SafeEncoder.encode(key), longitude, latitude, radius, unit, param);
   }
 
-  public void georadiusByMember(String key, String member, double radius, GeoUnit unit) {
+  public void georadiusReadonly(final String key, final double longitude, final double latitude,
+      final double radius, final GeoUnit unit, final GeoRadiusParam param) {
+    georadiusReadonly(SafeEncoder.encode(key), longitude, latitude, radius, unit, param);
+  }
+
+  public void georadiusByMember(final String key, final String member, final double radius,
+      final GeoUnit unit) {
     georadiusByMember(SafeEncoder.encode(key), SafeEncoder.encode(member), radius, unit);
   }
 
-  public void georadiusByMember(String key, String member, double radius, GeoUnit unit,
-      GeoRadiusParam param) {
+  public void georadiusByMemberReadonly(final String key, final String member, final double radius,
+      final GeoUnit unit) {
+    georadiusByMemberReadonly(SafeEncoder.encode(key), SafeEncoder.encode(member), radius, unit);
+  }
+
+  public void georadiusByMember(final String key, final String member, final double radius,
+      final GeoUnit unit, final GeoRadiusParam param) {
     georadiusByMember(SafeEncoder.encode(key), SafeEncoder.encode(member), radius, unit, param);
   }
 
-  private byte[][] getByteParams(String... params) {
-    byte[][] p = new byte[params.length][];
-    for (int i = 0; i < params.length; i++)
-      p[i] = SafeEncoder.encode(params[i]);
-
-    return p;
+  public void georadiusByMemberReadonly(final String key, final String member, final double radius,
+      final GeoUnit unit, final GeoRadiusParam param) {
+    georadiusByMemberReadonly(SafeEncoder.encode(key), SafeEncoder.encode(member), radius, unit,
+      param);
   }
 
-  public void moduleLoad(String path) {
+  public void moduleLoad(final String path) {
     moduleLoad(SafeEncoder.encode(path));
   }
-  public void moduleLoad() {
-    moduleList();
-  }
 
-  public void moduleUnload(String name) {
+  public void moduleUnload(final String name) {
     moduleUnload(SafeEncoder.encode(name));
   }
-  private HashMap<byte[], Double> convertScoreMembersToBinary(Map<String, Double> scoreMembers) {
-    HashMap<byte[], Double> binaryScoreMembers = new HashMap<byte[], Double>();
 
+  private HashMap<byte[], Double> convertScoreMembersToBinary(final Map<String, Double> scoreMembers) {
+    HashMap<byte[], Double> binaryScoreMembers = new HashMap<byte[], Double>();
     for (Entry<String, Double> entry : scoreMembers.entrySet()) {
       binaryScoreMembers.put(SafeEncoder.encode(entry.getKey()), entry.getValue());
     }
@@ -1193,9 +1149,8 @@ public class Client extends BinaryClient implements Commands {
   }
 
   private HashMap<byte[], GeoCoordinate> convertMemberCoordinateMapToBinary(
-      Map<String, GeoCoordinate> memberCoordinateMap) {
+      final Map<String, GeoCoordinate> memberCoordinateMap) {
     HashMap<byte[], GeoCoordinate> binaryMemberCoordinateMap = new HashMap<byte[], GeoCoordinate>();
-
     for (Entry<String, GeoCoordinate> entry : memberCoordinateMap.entrySet()) {
       binaryMemberCoordinateMap.put(SafeEncoder.encode(entry.getKey()), entry.getValue());
     }
@@ -1204,17 +1159,133 @@ public class Client extends BinaryClient implements Commands {
 
   @Override
   public void bitfield(final String key, final String... arguments) {
-    byte[][] argumentArray = new byte[arguments.length][];
-    int index = 0;
-    for(String argument : arguments) {
-      argumentArray[index++] = SafeEncoder.encode(argument);
-    }
-    bitfield(SafeEncoder.encode(key), argumentArray);
+    bitfield(SafeEncoder.encode(key), SafeEncoder.encodeMany(arguments));
   }
 
   @Override
   public void hstrlen(final String key, final String field) {
     hstrlen(SafeEncoder.encode(key), SafeEncoder.encode(field));
+  }
+
+  @Override
+  public void xadd(final String key, final StreamEntryID id, final Map<String, String> hash,
+      long maxLen, boolean approximateLength) {
+    final Map<byte[], byte[]> bhash = new HashMap<>(hash.size());
+    for (final Entry<String, String> entry : hash.entrySet()) {
+      bhash.put(SafeEncoder.encode(entry.getKey()), SafeEncoder.encode(entry.getValue()));
+    }
+    xadd(SafeEncoder.encode(key), SafeEncoder.encode(id == null ? "*" : id.toString()), bhash,
+      maxLen, approximateLength);
+  }
+
+  @Override
+  public void xlen(final String key) {
+    xlen(SafeEncoder.encode(key));
+  }
+
+  @Override
+  public void xrange(final String key, final StreamEntryID start, final StreamEntryID end,
+      final long count) {
+    xrange(SafeEncoder.encode(key), SafeEncoder.encode(start == null ? "-" : start.toString()),
+      SafeEncoder.encode(end == null ? "+" : end.toString()), count);
+  }
+
+  @Override
+  public void xrevrange(String key, StreamEntryID end, StreamEntryID start, int count) {
+    xrevrange(SafeEncoder.encode(key), SafeEncoder.encode(end == null ? "+" : end.toString()),
+      SafeEncoder.encode(start == null ? "-" : start.toString()), count);
+  }
+
+  @Override
+  public void xread(final int count, final long block,
+      final Entry<String, StreamEntryID>... streams) {
+    final Map<byte[], byte[]> bhash = new HashMap<byte[], byte[]>(streams.length);
+    for (final Entry<String, StreamEntryID> entry : streams) {
+      bhash.put(SafeEncoder.encode(entry.getKey()),
+        SafeEncoder.encode(entry.getValue() == null ? "0-0" : entry.getValue().toString()));
+    }
+    xread(count, block, bhash);
+  }
+
+  @Override
+  public void xack(final String key, final String group, final StreamEntryID... ids) {
+    final byte[][] bids = new byte[ids.length][];
+    for (int i = 0; i < ids.length; ++i) {
+      StreamEntryID id = ids[i];
+      bids[i] = SafeEncoder.encode(id == null ? "0-0" : id.toString());
+    }
+    xack(SafeEncoder.encode(key), SafeEncoder.encode(group), bids);
+  }
+
+  @Override
+  public void xgroupCreate(String key, String groupname, StreamEntryID id, boolean makeStream) {
+    xgroupCreate(SafeEncoder.encode(key), SafeEncoder.encode(groupname),
+      SafeEncoder.encode(id == null ? "0-0" : id.toString()), makeStream);
+  }
+
+  @Override
+  public void xgroupSetID(String key, String groupname, StreamEntryID id) {
+    xgroupSetID(SafeEncoder.encode(key), SafeEncoder.encode(groupname),
+      SafeEncoder.encode(id == null ? "0-0" : id.toString()));
+  }
+
+  @Override
+  public void xgroupDestroy(String key, String groupname) {
+    xgroupDestroy(SafeEncoder.encode(key), SafeEncoder.encode(groupname));
+  }
+
+  @Override
+  public void xgroupDelConsumer(String key, String groupname, String consumerName) {
+    xgroupDelConsumer(SafeEncoder.encode(key), SafeEncoder.encode(groupname),
+      SafeEncoder.encode(consumerName));
+  }
+
+  @Override
+  public void xdel(final String key, final StreamEntryID... ids) {
+    final byte[][] bids = new byte[ids.length][];
+    for (int i = 0; i < ids.length; ++i) {
+      StreamEntryID id = ids[i];
+      bids[i] = SafeEncoder.encode(id == null ? "0-0" : id.toString());
+    }
+    xdel(SafeEncoder.encode(key), bids);
+  }
+
+  @Override
+  public void xtrim(String key, long maxLen, boolean approximateLength) {
+    xtrim(SafeEncoder.encode(key), maxLen, approximateLength);
+  }
+
+  @Override
+  public void xreadGroup(String groupname, String consumer, int count, long block, boolean noAck,
+      Entry<String, StreamEntryID>... streams) {
+    final Map<byte[], byte[]> bhash = new HashMap<>(streams.length);
+    for (final Entry<String, StreamEntryID> entry : streams) {
+      bhash.put(SafeEncoder.encode(entry.getKey()),
+        SafeEncoder.encode(entry.getValue() == null ? ">" : entry.getValue().toString()));
+    }
+    xreadGroup(SafeEncoder.encode(groupname), SafeEncoder.encode(consumer), count, block, noAck,
+      bhash);
+  }
+
+  @Override
+  public void xpending(String key, String groupname, StreamEntryID start, StreamEntryID end,
+      int count, String consumername) {
+    xpending(SafeEncoder.encode(key), SafeEncoder.encode(groupname),
+      SafeEncoder.encode(start == null ? "-" : start.toString()),
+      SafeEncoder.encode(end == null ? "+" : end.toString()), count, consumername == null ? null
+          : SafeEncoder.encode(consumername));
+  }
+
+  @Override
+  public void xclaim(String key, String group, String consumername, long minIdleTime,
+      long newIdleTime, int retries, boolean force, StreamEntryID... ids) {
+
+    final byte[][] bids = new byte[ids.length][];
+    for (int i = 0; i < ids.length; i++) {
+      bids[i] = SafeEncoder.encode(ids[i].toString());
+    }
+    xclaim(SafeEncoder.encode(key), SafeEncoder.encode(group), SafeEncoder.encode(consumername),
+      minIdleTime, newIdleTime, retries, force, bids);
   }
 
 }

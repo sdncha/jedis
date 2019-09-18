@@ -1,8 +1,9 @@
 package redis.clients.jedis.tests.commands;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
+import static redis.clients.jedis.Protocol.Command.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,7 +21,8 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisCluster;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.tests.HostAndPortUtil;
-import redis.clients.util.JedisClusterCRC16;
+import redis.clients.jedis.util.JedisClusterCRC16;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class ClusterBinaryJedisCommandsTest {
   private Jedis node1;
@@ -35,15 +37,15 @@ public class ClusterBinaryJedisCommandsTest {
 
   @Before
   public void setUp() throws InterruptedException {
-    node1 = new Jedis(nodeInfo1.getHost(), nodeInfo1.getPort());
+    node1 = new Jedis(nodeInfo1);
     node1.auth("cluster");
     node1.flushAll();
 
-    node2 = new Jedis(nodeInfo2.getHost(), nodeInfo2.getPort());
+    node2 = new Jedis(nodeInfo2);
     node2.auth("cluster");
     node2.flushAll();
 
-    node3 = new Jedis(nodeInfo3.getHost(), nodeInfo3.getPort());
+    node3 = new Jedis(nodeInfo3);
     node3.auth("cluster");
     node3.flushAll();
 
@@ -75,7 +77,8 @@ public class ClusterBinaryJedisCommandsTest {
     waitForClusterReady();
 
     jedisClusterNode.add(new HostAndPort("127.0.0.1", 7379));
-    jedisCluster = new JedisCluster(jedisClusterNode, 2000, 2000, 5, "cluster", new JedisPoolConfig());
+    jedisCluster = new JedisCluster(jedisClusterNode, 2000, 2000, 5, "cluster",
+        new JedisPoolConfig());
 
   }
 
@@ -107,7 +110,7 @@ public class ClusterBinaryJedisCommandsTest {
     byte[] byteKey = "foo".getBytes();
     byte[] byteValue = "2".getBytes();
     jedisCluster.set(byteKey, byteValue);
-    assertEquals(new String(jedisCluster.get(byteKey)), "2");
+    assertArrayEquals(byteValue, jedisCluster.get(byteKey));
   }
 
   @SuppressWarnings("unchecked")
@@ -117,7 +120,7 @@ public class ClusterBinaryJedisCommandsTest {
     byte[] byteValue = "2".getBytes();
     jedisCluster.set(byteKey, byteValue);
     jedisCluster.incr(byteKey);
-    assertEquals(new String(jedisCluster.get(byteKey)), "3");
+    assertArrayEquals("3".getBytes(), jedisCluster.get(byteKey));
   }
 
   @SuppressWarnings("unchecked")
@@ -140,15 +143,15 @@ public class ClusterBinaryJedisCommandsTest {
   @SuppressWarnings("unchecked")
   @Test
   public void testHmset() {
-    byte[] byteKey = "language".getBytes();
-    byte[] language = "java".getBytes();
+    byte[] key = "jedis".getBytes();
+    byte[] field = "language".getBytes();
+    byte[] value = "java".getBytes();
     HashMap<byte[], byte[]> map = new HashMap();
-    map.put(byteKey, language);
-    jedisCluster.hmset(byteKey, map);
-    List<byte[]> listResults = jedisCluster.hmget(byteKey, byteKey);
+    map.put(field, value);
+    jedisCluster.hmset(key, map);
+    List<byte[]> listResults = jedisCluster.hmget(key, field);
     for (byte[] result : listResults) {
-      String resultString = new String(result);
-      assertEquals(resultString, "java");
+      assertArrayEquals(value, result);
     }
   }
 
@@ -166,14 +169,35 @@ public class ClusterBinaryJedisCommandsTest {
   }
 
   @Test
-  public void testGetSlot() {
-    assertEquals(JedisClusterCRC16.getSlot("{bar".getBytes()), JedisClusterCRC16.getSlot("{bar"));
-    assertEquals(JedisClusterCRC16.getSlot("{user1000}.following".getBytes()),
-      JedisClusterCRC16.getSlot("{user1000}.followers".getBytes()));
-    assertNotEquals(JedisClusterCRC16.getSlot("foo{}{bar}".getBytes()),
-      JedisClusterCRC16.getSlot("bar".getBytes()));
-    assertEquals(JedisClusterCRC16.getSlot("foo{bar}{zap}".getBytes()),
-      JedisClusterCRC16.getSlot("bar".getBytes()));
+  public void testKeys() {
+    assertEquals(0, jedisCluster.keys("{f}o*".getBytes()).size());
+    jedisCluster.set("{f}oo1".getBytes(), "bar".getBytes());
+    jedisCluster.set("{f}oo2".getBytes(), "bar".getBytes());
+    jedisCluster.set("{f}oo3".getBytes(), "bar".getBytes());
+    assertEquals(3, jedisCluster.keys("{f}o*".getBytes()).size());
+  }
+
+  @Test
+  public void testBinaryGeneralCommand() {
+    byte[] key = "x".getBytes();
+    byte[] value = "1".getBytes();
+    jedisCluster.sendCommand("z".getBytes(), SET, key, value);
+    jedisCluster.sendCommand("y".getBytes(), INCR, key);
+    Object returnObj = jedisCluster.sendCommand("w".getBytes(), GET, key);
+    assertEquals("2", SafeEncoder.encode((byte[]) returnObj));
+  }
+
+  @Test
+  public void testGeneralCommand() {
+    jedisCluster.sendCommand("z", SET, "x", "1");
+    jedisCluster.sendCommand("y", INCR, "x");
+    Object returnObj = jedisCluster.sendCommand("w", GET, "x");
+    assertEquals("2", SafeEncoder.encode((byte[]) returnObj));
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  public void failKeys() {
+    jedisCluster.keys("*".getBytes());
   }
 
   private static String getNodeId(String infoOutput) {

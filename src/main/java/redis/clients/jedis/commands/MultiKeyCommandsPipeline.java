@@ -4,6 +4,7 @@ import redis.clients.jedis.BitOP;
 import redis.clients.jedis.Response;
 import redis.clients.jedis.SortingParams;
 import redis.clients.jedis.ZParams;
+import redis.clients.jedis.params.MigrateParams;
 
 import java.util.List;
 import java.util.Set;
@@ -13,6 +14,8 @@ import java.util.Set;
  */
 public interface MultiKeyCommandsPipeline {
   Response<Long> del(String... keys);
+
+  Response<Long> unlink(String... keys);
 
   Response<Long> exists(String... keys);
 
@@ -68,9 +71,14 @@ public interface MultiKeyCommandsPipeline {
 
   Response<String> randomKey();
 
-  Response<Long> bitop(BitOP op, final String destKey, String... srcKeys);
+  Response<Long> bitop(BitOP op, String destKey, String... srcKeys);
 
-  Response<String> pfmerge(final String destkey, final String... sourcekeys);
+  Response<String> pfmerge(String destkey, String... sourcekeys);
 
-  Response<Long> pfcount(final String... keys);
+  Response<Long> pfcount(String... keys);
+
+  Response<Long> touch(String... keys);
+
+  Response<String> migrate(String host, int port, int destinationDB, int timeout,
+      MigrateParams params, String... keys);
 }

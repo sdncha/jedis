@@ -1,9 +1,12 @@
 package redis.clients.jedis;
 
 import java.util.List;
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-
 import java.util.Set;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocketFactory;
+
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 
 import redis.clients.jedis.exceptions.JedisException;
 import redis.clients.jedis.exceptions.JedisNoReachableClusterNodeException;
@@ -20,12 +23,24 @@ public class JedisSlotBasedConnectionHandler extends JedisClusterConnectionHandl
     super(nodes, poolConfig, connectionTimeout, soTimeout, null);
   }
 
-  public JedisSlotBasedConnectionHandler(Set<HostAndPort> nodes, GenericObjectPoolConfig poolConfig, int connectionTimeout, int soTimeout, String password) {
+  public JedisSlotBasedConnectionHandler(Set<HostAndPort> nodes,
+      GenericObjectPoolConfig poolConfig, int connectionTimeout, int soTimeout, String password) {
     super(nodes, poolConfig, connectionTimeout, soTimeout, password);
   }
 
-  public JedisSlotBasedConnectionHandler(Set<HostAndPort> nodes, GenericObjectPoolConfig poolConfig, int connectionTimeout, int soTimeout, String password, String clientName) {
+  public JedisSlotBasedConnectionHandler(Set<HostAndPort> nodes,
+      GenericObjectPoolConfig poolConfig, int connectionTimeout, int soTimeout, String password,
+      String clientName) {
     super(nodes, poolConfig, connectionTimeout, soTimeout, password, clientName);
+  }
+
+  public JedisSlotBasedConnectionHandler(Set<HostAndPort> nodes,
+      GenericObjectPoolConfig poolConfig, int connectionTimeout, int soTimeout, String password,
+      String clientName, boolean ssl, SSLSocketFactory sslSocketFactory,
+      SSLParameters sslParameters, HostnameVerifier hostnameVerifier,
+      JedisClusterHostAndPortMap portMap) {
+    super(nodes, poolConfig, connectionTimeout, soTimeout, password, clientName, ssl,
+        sslSocketFactory, sslParameters, hostnameVerifier, portMap);
   }
 
   @Override
@@ -69,12 +84,13 @@ public class JedisSlotBasedConnectionHandler extends JedisClusterConnectionHandl
       // assignment
       return connectionPool.getResource();
     } else {
-      renewSlotCache(); //It's abnormal situation for cluster mode, that we have just nothing for slot, try to rediscover state
+      renewSlotCache(); // It's abnormal situation for cluster mode, that we have just nothing for
+                        // slot, try to rediscover state
       connectionPool = cache.getSlotPool(slot);
       if (connectionPool != null) {
         return connectionPool.getResource();
       } else {
-        //no choice, fallback to new connection to random node
+        // no choice, fallback to new connection to random node
         return getConnection();
       }
     }

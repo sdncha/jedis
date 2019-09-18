@@ -20,6 +20,7 @@ import redis.clients.jedis.ShardedJedis;
 import redis.clients.jedis.ShardedJedisPipeline;
 import redis.clients.jedis.ShardedJedisPool;
 import redis.clients.jedis.exceptions.JedisException;
+import redis.clients.jedis.exceptions.JedisExhaustedPoolException;
 
 public class ShardedJedisPoolTest {
   private static HostAndPort redis1 = HostAndPortUtil.getRedisServers().get(0);
@@ -30,8 +31,8 @@ public class ShardedJedisPoolTest {
   @Before
   public void startUp() {
     shards = new ArrayList<JedisShardInfo>();
-    shards.add(new JedisShardInfo(redis1.getHost(), redis1.getPort()));
-    shards.add(new JedisShardInfo(redis2.getHost(), redis2.getPort()));
+    shards.add(new JedisShardInfo(redis1));
+    shards.add(new JedisShardInfo(redis2));
     shards.get(0).setPassword("foobared");
     shards.get(1).setPassword("foobared");
     Jedis j = new Jedis(shards.get(0));
@@ -102,7 +103,7 @@ public class ShardedJedisPoolTest {
     pool.destroy();
   }
 
-  @Test(expected = JedisException.class)
+  @Test(expected = JedisExhaustedPoolException.class)
   public void checkPoolOverflow() {
     GenericObjectPoolConfig config = new GenericObjectPoolConfig();
     config.setMaxTotal(1);
@@ -166,8 +167,8 @@ public class ShardedJedisPoolTest {
     shards.set(1, new JedisShardInfo("localhost", 1234));
     pool = new ShardedJedisPool(redisConfig, shards);
     jedis = pool.getResource();
-    Long actual = Long.valueOf(0);
-    Long fails = Long.valueOf(0);
+    long actual = 0;
+    long fails = 0;
     for (int i = 0; i < 1000; i++) {
       try {
         jedis.get("a-test-" + i);
@@ -178,8 +179,8 @@ public class ShardedJedisPoolTest {
     }
     jedis.close();
     pool.destroy();
-    assertEquals(actual, c1);
-    assertEquals(fails, c2);
+    assertEquals(Long.valueOf(actual), c1);
+    assertEquals(Long.valueOf(fails), c2);
   }
 
   @Test
