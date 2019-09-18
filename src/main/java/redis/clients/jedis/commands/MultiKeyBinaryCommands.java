@@ -6,10 +6,13 @@ import redis.clients.jedis.SortingParams;
 import redis.clients.jedis.ZParams;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface MultiKeyBinaryCommands {
   Long del(byte[]... keys);
+
+  Long unlink(byte[]... keys);
 
   Long exists(byte[]... keys);
 
@@ -75,9 +78,16 @@ public interface MultiKeyBinaryCommands {
 
   byte[] randomBinaryKey();
 
-  Long bitop(BitOP op, final byte[] destKey, byte[]... srcKeys);
+  Long bitop(BitOP op, byte[] destKey, byte[]... srcKeys);
 
-  String pfmerge(final byte[] destkey, final byte[]... sourcekeys);
+  String pfmerge(byte[] destkey, byte[]... sourcekeys);
 
   Long pfcount(byte[]... keys);
+
+  Long touch(byte[]... keys);
+
+  List<byte[]> xread(final int count, final long block, final Map<byte[], byte[]> streams);
+
+  List<byte[]> xreadGroup(byte[] groupname, byte[] consumer, int count, long block, boolean noAck,
+      Map<byte[], byte[]> streams);
 }

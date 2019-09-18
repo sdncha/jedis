@@ -17,10 +17,10 @@ import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisCluster;
 import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.exceptions.JedisClusterException;
+import redis.clients.jedis.exceptions.JedisClusterOperationException;
 import redis.clients.jedis.exceptions.JedisDataException;
 import redis.clients.jedis.tests.HostAndPortUtil;
-import redis.clients.util.JedisClusterCRC16;
+import redis.clients.jedis.util.JedisClusterCRC16;
 
 public class ClusterScriptingCommandsTest {
   private Jedis node1;
@@ -35,15 +35,15 @@ public class ClusterScriptingCommandsTest {
 
   @Before
   public void setUp() throws InterruptedException {
-    node1 = new Jedis(nodeInfo1.getHost(), nodeInfo1.getPort());
+    node1 = new Jedis(nodeInfo1);
     node1.auth("cluster");
     node1.flushAll();
 
-    node2 = new Jedis(nodeInfo2.getHost(), nodeInfo2.getPort());
+    node2 = new Jedis(nodeInfo2);
     node2.auth("cluster");
     node2.flushAll();
 
-    node3 = new Jedis(nodeInfo3.getHost(), nodeInfo3.getPort());
+    node3 = new Jedis(nodeInfo3);
     node3.auth("cluster");
     node3.flushAll();
 
@@ -75,7 +75,8 @@ public class ClusterScriptingCommandsTest {
     waitForClusterReady();
 
     jedisClusterNode.add(new HostAndPort("127.0.0.1", 7379));
-    jedisCluster = new JedisCluster(jedisClusterNode, 2000, 2000, 5, "cluster", new JedisPoolConfig());
+    jedisCluster = new JedisCluster(jedisClusterNode, 2000, 2000, 5, "cluster",
+        new JedisPoolConfig());
 
   }
 
@@ -102,7 +103,7 @@ public class ClusterScriptingCommandsTest {
   }
 
   @SuppressWarnings("unchecked")
-  @Test(expected = JedisClusterException.class)
+  @Test(expected = JedisClusterOperationException.class)
   public void testJedisClusterException() {
     String script = "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2],ARGV[3]}";
     List<String> keys = new ArrayList<String>();
@@ -122,7 +123,7 @@ public class ClusterScriptingCommandsTest {
     int numKeys = 1;
     String[] args = { "foo" };
     jedisCluster.eval(script, numKeys, args);
-    assertEquals(jedisCluster.get("foo"), "bar");
+    assertEquals("bar", jedisCluster.get("foo"));
   }
 
   @SuppressWarnings("unchecked")
@@ -141,7 +142,7 @@ public class ClusterScriptingCommandsTest {
   }
 
   @SuppressWarnings("unchecked")
-  @Test(expected = JedisClusterException.class)
+  @Test(expected = JedisClusterOperationException.class)
   public void testJedisClusterException2() {
     byte[] script = "return {KEYS[1],KEYS[2],ARGV[1],ARGV[2],ARGV[3]}".getBytes();
     List<byte[]> keys = new ArrayList<byte[]>();
@@ -160,7 +161,7 @@ public class ClusterScriptingCommandsTest {
     byte[] script = "return redis.call('set',KEYS[1],'bar')".getBytes();
     byte[] args = "foo".getBytes();
     jedisCluster.eval(script, 1, args);
-    assertEquals(jedisCluster.get("foo"), "bar");
+    assertEquals("bar", jedisCluster.get("foo"));
   }
 
   @SuppressWarnings("unchecked")

@@ -1,9 +1,20 @@
 package redis.clients.jedis.commands;
 
-import redis.clients.jedis.*;
-import redis.clients.jedis.params.geo.GeoRadiusParam;
-import redis.clients.jedis.params.sortedset.ZAddParams;
-import redis.clients.jedis.params.sortedset.ZIncrByParams;
+import redis.clients.jedis.StreamEntryID;
+import redis.clients.jedis.BitPosParams;
+import redis.clients.jedis.GeoCoordinate;
+import redis.clients.jedis.GeoRadiusResponse;
+import redis.clients.jedis.GeoUnit;
+import redis.clients.jedis.ListPosition;
+import redis.clients.jedis.StreamPendingEntry;
+import redis.clients.jedis.Response;
+import redis.clients.jedis.SortingParams;
+import redis.clients.jedis.StreamEntry;
+import redis.clients.jedis.Tuple;
+import redis.clients.jedis.params.GeoRadiusParam;
+import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
+import redis.clients.jedis.params.ZIncrByParams;
 
 import java.util.List;
 import java.util.Map;
@@ -18,9 +29,11 @@ public interface RedisPipeline {
 
   Response<Long> decr(String key);
 
-  Response<Long> decrBy(String key, long integer);
+  Response<Long> decrBy(String key, long decrement);
 
   Response<Long> del(String key);
+
+  Response<Long> unlink(String key);
 
   Response<String> echo(String string);
 
@@ -62,17 +75,19 @@ public interface RedisPipeline {
 
   Response<Long> hset(String key, String field, String value);
 
+  Response<Long> hset(String key, Map<String, String> hash);
+
   Response<Long> hsetnx(String key, String field, String value);
 
   Response<List<String>> hvals(String key);
 
   Response<Long> incr(String key);
 
-  Response<Long> incrBy(String key, long integer);
+  Response<Long> incrBy(String key, long increment);
 
   Response<String> lindex(String key, long index);
 
-  Response<Long> linsert(String key, BinaryClient.LIST_POSITION where, String pivot, String value);
+  Response<Long> linsert(String key, ListPosition where, String pivot, String value);
 
   Response<Long> llen(String key);
 
@@ -82,13 +97,13 @@ public interface RedisPipeline {
 
   Response<Long> lpushx(String key, String... string);
 
-  Response<List<String>> lrange(String key, long start, long end);
+  Response<List<String>> lrange(String key, long start, long stop);
 
   Response<Long> lrem(String key, long count, String value);
 
   Response<String> lset(String key, long index, String value);
 
-  Response<String> ltrim(String key, long start, long end);
+  Response<String> ltrim(String key, long start, long stop);
 
   Response<Long> move(String key, int dbIndex);
 
@@ -134,7 +149,11 @@ public interface RedisPipeline {
 
   Response<String> substr(String key, int start, int end);
 
+  Response<Long> touch(String key);
+
   Response<Long> ttl(String key);
+
+  Response<Long> pttl(String key);
 
   Response<String> type(String key);
 
@@ -150,17 +169,21 @@ public interface RedisPipeline {
 
   Response<Long> zcount(String key, double min, double max);
 
-  Response<Double> zincrby(String key, double score, String member);
+  Response<Long> zcount(String key, String min, String max);
 
-  Response<Double> zincrby(String key, double score, String member, ZIncrByParams params);
+  Response<Double> zincrby(String key, double increment, String member);
 
-  Response<Set<String>> zrange(String key, long start, long end);
+  Response<Double> zincrby(String key, double increment, String member, ZIncrByParams params);
+
+  Response<Set<String>> zrange(String key, long start, long stop);
 
   Response<Set<String>> zrangeByScore(String key, double min, double max);
 
   Response<Set<String>> zrangeByScore(String key, String min, String max);
 
   Response<Set<String>> zrangeByScore(String key, double min, double max, int offset, int count);
+
+  Response<Set<String>> zrangeByScore(String key, String min, String max, int offset, int count);
 
   Response<Set<Tuple>> zrangeByScoreWithScores(String key, double min, double max);
 
@@ -173,54 +196,69 @@ public interface RedisPipeline {
 
   Response<Set<String>> zrevrangeByScore(String key, double max, double min, int offset, int count);
 
+  Response<Set<String>> zrevrangeByScore(String key, String max, String min, int offset, int count);
+
   Response<Set<Tuple>> zrevrangeByScoreWithScores(String key, double max, double min);
+
+  Response<Set<Tuple>> zrevrangeByScoreWithScores(String key, String max, String min);
 
   Response<Set<Tuple>> zrevrangeByScoreWithScores(String key, double max, double min, int offset,
       int count);
 
-  Response<Set<Tuple>> zrangeWithScores(String key, long start, long end);
+  Response<Set<Tuple>> zrevrangeByScoreWithScores(String key, String max, String min, int offset,
+      int count);
+
+  Response<Set<Tuple>> zrangeWithScores(String key, long start, long stop);
 
   Response<Long> zrank(String key, String member);
 
-  Response<Long> zrem(String key, String... member);
+  Response<Long> zrem(String key, String... members);
 
-  Response<Long> zremrangeByRank(String key, long start, long end);
+  Response<Long> zremrangeByRank(String key, long start, long stop);
 
-  Response<Long> zremrangeByScore(String key, double start, double end);
+  Response<Long> zremrangeByScore(String key, double min, double max);
 
-  Response<Set<String>> zrevrange(String key, long start, long end);
+  Response<Long> zremrangeByScore(String key, String min, String max);
 
-  Response<Set<Tuple>> zrevrangeWithScores(String key, long start, long end);
+  Response<Set<String>> zrevrange(String key, long start, long stop);
+
+  Response<Set<Tuple>> zrevrangeWithScores(String key, long start, long stop);
 
   Response<Long> zrevrank(String key, String member);
 
   Response<Double> zscore(String key, String member);
 
-  Response<Long> zlexcount(final String key, final String min, final String max);
+  Response<Long> zlexcount(String key, String min, String max);
 
-  Response<Set<String>> zrangeByLex(final String key, final String min, final String max);
+  Response<Set<String>> zrangeByLex(String key, String min, String max);
 
-  Response<Set<String>> zrangeByLex(final String key, final String min, final String max,
-      final int offset, final int count);
+  Response<Set<String>> zrangeByLex(String key, String min, String max, int offset, int count);
 
-  Response<Set<String>> zrevrangeByLex(final String key, final String max, final String min);
+  Response<Set<String>> zrevrangeByLex(String key, String max, String min);
 
-  Response<Set<String>> zrevrangeByLex(final String key, final String max, final String min,
-      final int offset, final int count);
+  Response<Set<String>> zrevrangeByLex(String key, String max, String min, int offset, int count);
 
-  Response<Long> zremrangeByLex(final String key, final String start, final String end);
+  Response<Long> zremrangeByLex(String key, String min, String max);
 
   Response<Long> bitcount(String key);
 
   Response<Long> bitcount(String key, long start, long end);
 
-  Response<Long> pfadd(final String key, final String... elements);
+  Response<Long> pfadd(String key, String... elements);
 
-  Response<Long> pfcount(final String key);
-  
+  Response<Long> pfcount(String key);
+
   Response<List<Long>> bitfield(String key, String... arguments);
-  
+
   Response<Long> hstrlen(String key, String field);
+
+  Response<byte[]> dump(String key);
+
+  Response<String> restore(String key, int ttl, byte[] serializedValue);
+
+  Response<String> restoreReplace(String key, int ttl, byte[] serializedValue);
+
+  Response<String> migrate(String host, int port, String key, int destinationDB, int timeout);
 
   // Geo Commands
 
@@ -239,12 +277,81 @@ public interface RedisPipeline {
   Response<List<GeoRadiusResponse>> georadius(String key, double longitude, double latitude,
       double radius, GeoUnit unit);
 
+  Response<List<GeoRadiusResponse>> georadiusReadonly(String key, double longitude,
+      double latitude, double radius, GeoUnit unit);
+
   Response<List<GeoRadiusResponse>> georadius(String key, double longitude, double latitude,
       double radius, GeoUnit unit, GeoRadiusParam param);
+
+  Response<List<GeoRadiusResponse>> georadiusReadonly(String key, double longitude,
+      double latitude, double radius, GeoUnit unit, GeoRadiusParam param);
 
   Response<List<GeoRadiusResponse>> georadiusByMember(String key, String member, double radius,
       GeoUnit unit);
 
+  Response<List<GeoRadiusResponse>> georadiusByMemberReadonly(String key, String member,
+      double radius, GeoUnit unit);
+
   Response<List<GeoRadiusResponse>> georadiusByMember(String key, String member, double radius,
       GeoUnit unit, GeoRadiusParam param);
+
+  Response<List<GeoRadiusResponse>> georadiusByMemberReadonly(String key, String member,
+      double radius, GeoUnit unit, GeoRadiusParam param);
+
+  Response<StreamEntryID> xadd(String key, StreamEntryID id, Map<String, String> hash);
+
+  Response<StreamEntryID> xadd(String key, StreamEntryID id, Map<String, String> hash, long maxLen,
+      boolean approximateLength);
+
+  Response<Long> xlen(String key);
+
+  Response<List<StreamEntry>> xrange(String key, StreamEntryID start, StreamEntryID end, int count);
+
+  Response<List<StreamEntry>> xrevrange(String key, StreamEntryID end, StreamEntryID start,
+      int count);
+
+  Response<Long> xack(String key, String group, StreamEntryID... ids);
+
+  Response<String> xgroupCreate(String key, String groupname, StreamEntryID id, boolean makeStream);
+
+  Response<String> xgroupSetID(String key, String groupname, StreamEntryID id);
+
+  Response<Long> xgroupDestroy(String key, String groupname);
+
+  Response<String> xgroupDelConsumer(String key, String groupname, String consumername);
+
+  Response<List<StreamPendingEntry>> xpending(String key, String groupname, StreamEntryID start,
+      StreamEntryID end, int count, String consumername);
+
+  Response<Long> xdel(String key, StreamEntryID... ids);
+
+  Response<Long> xtrim(String key, long maxLen, boolean approximateLength);
+
+  Response<List<StreamEntry>> xclaim(String key, String group, String consumername,
+      long minIdleTime, long newIdleTime, int retries, boolean force, StreamEntryID... ids);
+
+  Response<Long> bitpos(String key, boolean value);
+
+  Response<Long> bitpos(String key, boolean value, BitPosParams params);
+
+  Response<String> set(String key, String value, SetParams params);
+
+  Response<List<String>> srandmember(String key, int count);
+
+  Response<Set<Tuple>> zrangeByScoreWithScores(String key, String min, String max);
+
+  Response<Set<Tuple>> zrangeByScoreWithScores(String key, String min, String max, int offset,
+      int count);
+
+  Response<Long> objectRefcount(String key);
+
+  Response<String> objectEncoding(String key);
+
+  Response<Long> objectIdletime(String key);
+
+  Response<Double> incrByFloat(String key, double increment);
+
+  Response<String> psetex(String key, long milliseconds, String value);
+
+  Response<Double> hincrByFloat(String key, String field, double increment);
 }

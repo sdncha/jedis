@@ -3,9 +3,7 @@ package redis.clients.jedis;
 import java.net.URI;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -15,25 +13,26 @@ import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocketFactory;
 
-import redis.clients.jedis.BinaryClient.LIST_POSITION;
-import redis.clients.jedis.JedisCluster.Reset;
 import redis.clients.jedis.commands.AdvancedJedisCommands;
 import redis.clients.jedis.commands.BasicCommands;
 import redis.clients.jedis.commands.ClusterCommands;
 import redis.clients.jedis.commands.JedisCommands;
 import redis.clients.jedis.commands.ModuleCommands;
 import redis.clients.jedis.commands.MultiKeyCommands;
+import redis.clients.jedis.commands.ProtocolCommand;
 import redis.clients.jedis.commands.ScriptingCommands;
 import redis.clients.jedis.commands.SentinelCommands;
-import redis.clients.jedis.params.geo.GeoRadiusParam;
-import redis.clients.jedis.params.set.SetParams;
-import redis.clients.jedis.params.sortedset.ZAddParams;
-import redis.clients.jedis.params.sortedset.ZIncrByParams;
-import redis.clients.util.SafeEncoder;
-import redis.clients.util.Slowlog;
+import redis.clients.jedis.params.GeoRadiusParam;
+import redis.clients.jedis.params.MigrateParams;
+import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.params.ZAddParams;
+import redis.clients.jedis.params.ZIncrByParams;
+import redis.clients.jedis.util.SafeEncoder;
+import redis.clients.jedis.util.Slowlog;
 
 public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommands,
-    AdvancedJedisCommands, ScriptingCommands, BasicCommands, ClusterCommands, SentinelCommands, ModuleCommands {
+    AdvancedJedisCommands, ScriptingCommands, BasicCommands, ClusterCommands, SentinelCommands,
+    ModuleCommands {
 
   protected JedisPoolAbstract dataSource = null;
 
@@ -43,6 +42,10 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
 
   public Jedis(final String host) {
     super(host);
+  }
+
+  public Jedis(final HostAndPort hp) {
+    super(hp);
   }
 
   public Jedis(final String host, final int port) {
@@ -83,8 +86,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   public Jedis(final String host, final int port, final int connectionTimeout, final int soTimeout,
-      final boolean ssl, final SSLSocketFactory sslSocketFactory, final SSLParameters sslParameters,
-      final HostnameVerifier hostnameVerifier) {
+      final boolean ssl, final SSLSocketFactory sslSocketFactory,
+      final SSLParameters sslParameters, final HostnameVerifier hostnameVerifier) {
     super(host, port, connectionTimeout, soTimeout, ssl, sslSocketFactory, sslParameters,
         hostnameVerifier);
   }
@@ -122,6 +125,17 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
+   * Works same as <tt>ping()</tt> but returns argument message instead of <tt>PONG</tt>.
+   * @param message
+   * @return message
+   */
+  public String ping(final String message) {
+    checkIsInMultiOrPipeline();
+    client.ping(message);
+    return client.getBulkReply();
+  }
+
+  /**
    * Set the string value as value of the key. The string can't be longer than 1073741824 bytes (1
    * GB).
    * <p>
@@ -131,7 +145,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return Status code reply
    */
   @Override
-  public String set(final String key, String value) {
+  public String set(final String key, final String value) {
     checkIsInMultiOrPipeline();
     client.set(key, value);
     return client.getStatusCodeReply();
@@ -146,6 +160,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    *          key if it already exist. EX|PX, expire time units: EX = seconds; PX = milliseconds
    * @return Status code reply
    */
+  @Override
   public String set(final String key, final String value, final SetParams params) {
     checkIsInMultiOrPipeline();
     client.set(key, value, params);
@@ -163,17 +178,18 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   @Override
   public String get(final String key) {
     checkIsInMultiOrPipeline();
-    client.sendCommand(Protocol.Command.GET, key);
+    client.get(key);
     return client.getBulkReply();
   }
 
   /**
-   * Test if the specified key exists. The command returns the number of keys existed Time
+   * Test if the specified keys exist. The command returns the number of keys exist. Time
    * complexity: O(N)
    * @param keys
-   * @return Integer reply, specifically: an integer greater than 0 if one or more keys were removed
-   *         0 if none of the specified key existed
+   * @return Integer reply, specifically: an integer greater than 0 if one or more keys exist, 0 if
+   *         none of the specified keys exist.
    */
+  @Override
   public Long exists(final String... keys) {
     checkIsInMultiOrPipeline();
     client.exists(keys);
@@ -181,8 +197,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * Test if the specified key exists. The command returns "1" if the key exists, otherwise "0" is
-   * returned. Note that even keys set with an empty string as value will return "1". Time
+   * Test if the specified key exists. The command returns true if the key exists, otherwise false
+   * is returned. Note that even keys set with an empty string as value will return true. Time
    * complexity: O(1)
    * @param key
    * @return Boolean reply, true if the key exists, otherwise false
@@ -209,8 +225,35 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Long del(String key) {
+  public Long del(final String key) {
+    checkIsInMultiOrPipeline();
     client.del(key);
+    return client.getIntegerReply();
+  }
+
+  /**
+   * This command is very similar to DEL: it removes the specified keys. Just like DEL a key is
+   * ignored if it does not exist. However the command performs the actual memory reclaiming in a
+   * different thread, so it is not blocking, while DEL is. This is where the command name comes
+   * from: the command just unlinks the keys from the keyspace. The actual removal will happen later
+   * asynchronously.
+   * <p>
+   * Time complexity: O(1) for each key removed regardless of its size. Then the command does O(N)
+   * work in a different thread in order to reclaim memory, where N is the number of allocations the
+   * deleted objects where composed of.
+   * @param keys
+   * @return Integer reply: The number of keys that were unlinked
+   */
+  @Override
+  public Long unlink(final String... keys) {
+    checkIsInMultiOrPipeline();
+    client.unlink(keys);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public Long unlink(final String key) {
+    client.unlink(key);
     return client.getIntegerReply();
   }
 
@@ -230,34 +273,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     return client.getStatusCodeReply();
   }
 
-  /**
-   * Returns all the keys matching the glob-style pattern as space separated strings. For example if
-   * you have in the database the keys "foo" and "foobar" the command "KEYS foo*" will return
-   * "foo foobar".
-   * <p>
-   * Note that while the time complexity for this operation is O(n) the constant times are pretty
-   * low. For example Redis running on an entry level laptop can scan a 1 million keys database in
-   * 40 milliseconds. <b>Still it's better to consider this one of the slow commands that may ruin
-   * the DB performance if not used with care.</b>
-   * <p>
-   * In other words this command is intended only for debugging and special operations like creating
-   * a script to change the DB schema. Don't use it in your normal code. Use Redis Sets in order to
-   * group together a subset of objects.
-   * <p>
-   * Glob style patterns examples:
-   * <ul>
-   * <li>h?llo will match hello hallo hhllo
-   * <li>h*llo will match hllo heeeello
-   * <li>h[ae]llo will match hello and hallo, but not hillo
-   * </ul>
-   * <p>
-   * Use \ to escape special chars if you want to match them verbatim.
-   * <p>
-   * Time complexity: O(n) (with n being the number of keys in the DB, and assuming keys and pattern
-   * of limited length)
-   * @param pattern
-   * @return Multi bulk reply
-   */
   @Override
   public Set<String> keys(final String pattern) {
     checkIsInMultiOrPipeline();
@@ -314,9 +329,9 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * Set a timeout on the specified key. After the timeout the key will be automatically deleted by
    * the server. A key with an associated timeout is said to be volatile in Redis terminology.
    * <p>
-   * Voltile keys are stored on disk like the other keys, the timeout is persistent too like all the
-   * other aspects of the dataset. Saving a dataset containing expires and stopping the server does
-   * not stop the flow of time as Redis stores on disk the time when the key will no longer be
+   * Volatile keys are stored on disk like the other keys, the timeout is persistent too like all
+   * the other aspects of the dataset. Saving a dataset containing expires and stopping the server
+   * does not stop the flow of time as Redis stores on disk the time when the key will no longer be
    * available as Unix time, and not the remaining seconds.
    * <p>
    * Since Redis 2.1.3 you can update the value of the timeout of a key already having an expire
@@ -339,9 +354,9 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * EXPIREAT works exctly like {@link #expire(String, int) EXPIRE} but instead to get the number of
-   * seconds representing the Time To Live of the key as a second argument (that is a relative way
-   * of specifing the TTL), it takes an absolute one in the form of a UNIX timestamp (Number of
+   * EXPIREAT works exactly like {@link #expire(String, int) EXPIRE} but instead to get the number
+   * of seconds representing the Time To Live of the key as a second argument (that is a relative
+   * way of specifying the TTL), it takes an absolute one in the form of a UNIX timestamp (Number of
    * seconds elapsed since 1 Gen 1970).
    * <p>
    * EXPIREAT was introduced in order to implement the Append Only File persistence mode so that
@@ -386,6 +401,26 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
+   * Alters the last access time of a key(s). A key is ignored if it does not exist. Time
+   * complexity: O(N) where N is the number of keys that will be touched.
+   * @param keys
+   * @return Integer reply: The number of keys that were touched.
+   */
+  @Override
+  public Long touch(final String... keys) {
+    checkIsInMultiOrPipeline();
+    client.touch(keys);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public Long touch(final String key) {
+    checkIsInMultiOrPipeline();
+    client.touch(key);
+    return client.getIntegerReply();
+  }
+
+  /**
    * Move the specified key from the currently selected DB to the specified destination DB. Note
    * that this command returns 1 only if the key was successfully moved, and 0 if the target key was
    * already there or if the source key was not found at all, so it is possible to use MOVE as a
@@ -420,7 +455,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * Get the values of all the specified keys. If one or more keys dont exist or is not of type
+   * Get the values of all the specified keys. If one or more keys don't exist or is not of type
    * String, a 'nil' value is returned instead of the value of the specified key, but the operation
    * never fails.
    * <p>
@@ -531,13 +566,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @see #decr(String)
    * @see #incrBy(String, long)
    * @param key
-   * @param integer
+   * @param decrement
    * @return Integer reply, this commands will reply with the new value of key after the increment.
    */
   @Override
-  public Long decrBy(final String key, final long integer) {
+  public Long decrBy(final String key, final long decrement) {
     checkIsInMultiOrPipeline();
-    client.decrBy(key, integer);
+    client.decrBy(key, decrement);
     return client.getIntegerReply();
   }
 
@@ -580,13 +615,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @see #decr(String)
    * @see #decrBy(String, long)
    * @param key
-   * @param integer
+   * @param increment
    * @return Integer reply, this commands will reply with the new value of key after the increment.
    */
   @Override
-  public Long incrBy(final String key, final long integer) {
+  public Long incrBy(final String key, final long increment) {
     checkIsInMultiOrPipeline();
-    client.incrBy(key, integer);
+    client.incrBy(key, increment);
     return client.getIntegerReply();
   }
 
@@ -602,13 +637,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * <p>
    * Time complexity: O(1)
    * @param key
-   * @param value
+   * @param increment
    * @return Double reply, this commands will reply with the new value of key after the increment.
    */
   @Override
-  public Double incrByFloat(final String key, final double value) {
+  public Double incrByFloat(final String key, final double increment) {
     checkIsInMultiOrPipeline();
-    client.incrByFloat(key, value);
+    client.incrByFloat(key, increment);
     String dval = client.getBulkReply();
     return (dval != null ? new Double(dval) : null);
   }
@@ -695,6 +730,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   public Long hset(final String key, final String field, final String value) {
     checkIsInMultiOrPipeline();
     client.hset(key, field, value);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public Long hset(final String key, final Map<String, String> hash) {
+    checkIsInMultiOrPipeline();
+    client.hset(key, hash);
     return client.getIntegerReply();
   }
 
@@ -816,8 +858,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * Test for existence of a specified field in a hash. <b>Time complexity:</b> O(1)
    * @param key
    * @param field
-   * @return Return 1 if the hash stored at key contains the specified field. Return 0 if the key is
-   *         not found or the field is not present.
+   * @return Return true if the hash stored at key contains the specified field. Return false if the
+   *         key is not found or the field is not present.
    */
   @Override
   public Boolean hexists(final String key, final String field) {
@@ -981,13 +1023,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * offset)
    * @param key
    * @param start
-   * @param end
+   * @param stop
    * @return Multi bulk reply, specifically a list of elements in the specified range.
    */
   @Override
-  public List<String> lrange(final String key, final long start, final long end) {
+  public List<String> lrange(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.lrange(key, start, end);
+    client.lrange(key, start, stop);
     return client.getMultiBulkReply();
   }
 
@@ -1018,13 +1060,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * Time complexity: O(n) (with n being len of list - len of range)
    * @param key
    * @param start
-   * @param end
+   * @param stop
    * @return Status code reply
    */
   @Override
-  public String ltrim(final String key, final long start, final long end) {
+  public String ltrim(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.ltrim(key, start, end);
+    client.ltrim(key, start, stop);
     return client.getStatusCodeReply();
   }
 
@@ -1081,7 +1123,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * Remove the first count occurrences of the value element from the list. If count is zero all the
    * elements are removed. If count is negative elements are removed from tail to head, instead to
    * go from head to tail that is the normal behaviour. So for example LREM with count -2 and hello
-   * as value to remove against the list (a,b,c,hello,x,hello,hello) will lave the list
+   * as value to remove against the list (a,b,c,hello,x,hello,hello) will leave the list
    * (a,b,c,hello,x). The number of removed elements is returned as an integer, see below for more
    * information about the returned value. Note that non existing keys are considered like empty
    * lists by LREM, so LREM against non existing keys will always return 0.
@@ -1141,7 +1183,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * <p>
    * If the key does not exist or the list is already empty the special value 'nil' is returned. If
    * the srckey and dstkey are the same the operation is equivalent to removing the last element
-   * from the list and pusing it as first element of the list, so it's a "list rotation" command.
+   * from the list and pushing it as first element of the list, so it's a "list rotation" command.
    * <p>
    * Time complexity: O(1)
    * @param srckey
@@ -1186,9 +1228,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.smembers(key);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -1232,14 +1271,12 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.spop(key, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
+    if (members == null) return null;
     return SetFromList.of(members);
   }
 
   /**
-   * Move the specifided member from the set at srckey to the set at dstkey. This operation is
+   * Move the specified member from the set at srckey to the set at dstkey. This operation is
    * atomic, in every given moment the element will appear to be in the source or destination set
    * for accessing clients.
    * <p>
@@ -1279,13 +1316,13 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * Return 1 if member is a member of the set stored at key, otherwise 0 is returned.
+   * Return true if member is a member of the set stored at key, otherwise false is returned.
    * <p>
    * Time complexity O(1)
    * @param key
    * @param member
-   * @return Integer reply, specifically: 1 if the element is a member of the set 0 if the element
-   *         is not a member of the set OR if the key does not exist
+   * @return Boolean reply, specifically: true if the element is a member of the set false if the
+   *         element is not a member of the set OR if the key does not exist
    */
   @Override
   public Boolean sismember(final String key, final String member) {
@@ -1314,15 +1351,12 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.sinter(keys);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
   /**
-   * This commnad works exactly like {@link #sinter(String...) SINTER} but instead of being returned
-   * the resulting set is sotred as dstkey.
+   * This command works exactly like {@link #sinter(String...) SINTER} but instead of being returned
+   * the resulting set is stored as dstkey.
    * <p>
    * Time complexity O(N*M) worst case where N is the cardinality of the smallest set and M the
    * number of sets
@@ -1354,9 +1388,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.sunion(keys);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -1443,10 +1474,10 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * Add the specified member having the specifeid score to the sorted set stored at key. If member
+   * Add the specified member having the specified score to the sorted set stored at key. If member
    * is already a member of the sorted set the score is updated, and the element reinserted in the
    * right position to ensure sorting. If key does not exist a new sorted set with the specified
-   * member as sole member is crated. If the key exists but does not hold a sorted set value an
+   * member as sole member is created. If the key exists but does not hold a sorted set value an
    * error is returned.
    * <p>
    * The score value can be the string representation of a double precision floating point number.
@@ -1481,20 +1512,17 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Long zadd(String key, Map<String, Double> scoreMembers, ZAddParams params) {
+  public Long zadd(final String key, final Map<String, Double> scoreMembers, final ZAddParams params) {
     checkIsInMultiOrPipeline();
     client.zadd(key, scoreMembers, params);
     return client.getIntegerReply();
   }
 
   @Override
-  public Set<String> zrange(final String key, final long start, final long end) {
+  public Set<String> zrange(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.zrange(key, start, end);
+    client.zrange(key, start, stop);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -1521,7 +1549,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * position of the element in the sorted set accordingly. If member does not already exist in the
    * sorted set it is added with increment as score (that is, like if the previous score was
    * virtually zero). If key does not exist a new sorted set with the specified member as sole
-   * member is crated. If the key exists but does not hold a sorted set value an error is returned.
+   * member is created. If the key exists but does not hold a sorted set value an error is returned.
    * <p>
    * The score value can be the string representation of a double precision floating point number.
    * It's possible to provide a negative value to perform a decrement.
@@ -1530,32 +1558,27 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * <p>
    * Time complexity O(log(N)) with N being the number of elements in the sorted set
    * @param key
-   * @param score
+   * @param increment
    * @param member
    * @return The new score
    */
   @Override
-  public Double zincrby(final String key, final double score, final String member) {
+  public Double zincrby(final String key, final double increment, final String member) {
     checkIsInMultiOrPipeline();
-    client.zincrby(key, score, member);
-    String newscore = client.getBulkReply();
-    return Double.valueOf(newscore);
+    client.zincrby(key, increment, member);
+    return BuilderFactory.DOUBLE.build(client.getOne());
   }
 
   @Override
-  public Double zincrby(String key, double score, String member, ZIncrByParams params) {
+  public Double zincrby(final String key, final double increment, final String member,
+      final ZIncrByParams params) {
     checkIsInMultiOrPipeline();
-    client.zincrby(key, score, member, params);
-    String newscore = client.getBulkReply();
-
-    // with nx / xx options it could return null now
-    if (newscore == null) return null;
-
-    return Double.valueOf(newscore);
+    client.zincrby(key, increment, member, params);
+    return BuilderFactory.DOUBLE.build(client.getOne());
   }
 
   /**
-   * Return the rank (or index) or member in the sorted set at key, with scores being ordered from
+   * Return the rank (or index) of member in the sorted set at key, with scores being ordered from
    * low to high.
    * <p>
    * When the given member does not exist in the sorted set, the special value 'nil' is returned.
@@ -1578,7 +1601,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   /**
-   * Return the rank (or index) or member in the sorted set at key, with scores being ordered from
+   * Return the rank (or index) of member in the sorted set at key, with scores being ordered from
    * high to low.
    * <p>
    * When the given member does not exist in the sorted set, the special value 'nil' is returned.
@@ -1601,27 +1624,24 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Set<String> zrevrange(final String key, final long start, final long end) {
+  public Set<String> zrevrange(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.zrevrange(key, start, end);
+    client.zrevrange(key, start, stop);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
   @Override
-  public Set<Tuple> zrangeWithScores(final String key, final long start, final long end) {
+  public Set<Tuple> zrangeWithScores(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.zrangeWithScores(key, start, end);
+    client.zrangeWithScores(key, start, stop);
     return getTupledSet();
   }
 
   @Override
-  public Set<Tuple> zrevrangeWithScores(final String key, final long start, final long end) {
+  public Set<Tuple> zrevrangeWithScores(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.zrevrangeWithScores(key, start, end);
+    client.zrevrangeWithScores(key, start, stop);
     return getTupledSet();
   }
 
@@ -1654,8 +1674,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   public Double zscore(final String key, final String member) {
     checkIsInMultiOrPipeline();
     client.zscore(key, member);
-    final String score = client.getBulkReply();
-    return (score != null ? new Double(score) : null);
+    return BuilderFactory.DOUBLE.build(client.getOne());
   }
 
   @Override
@@ -1844,7 +1863,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<String> blpop(String... args) {
+  public List<String> blpop(final String... args) {
     checkIsInMultiOrPipeline();
     client.blpop(args);
     client.setTimeoutInfinite();
@@ -1856,7 +1875,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<String> brpop(String... args) {
+  public List<String> brpop(final String... args) {
     checkIsInMultiOrPipeline();
     client.brpop(args);
     client.setTimeoutInfinite();
@@ -2038,9 +2057,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByScore(key, min, max);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2049,9 +2065,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByScore(key, min, max);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2100,6 +2113,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @param key
    * @param min
    * @param max
+   * @param offset
+   * @param count
    * @return Multi bulk reply specifically a list of elements in the specified score range.
    */
   @Override
@@ -2108,9 +2123,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByScore(key, min, max, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2120,9 +2132,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByScore(key, min, max, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2232,6 +2241,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @param key
    * @param min
    * @param max
+   * @param offset
+   * @param count
    * @return Multi bulk reply specifically a list of elements in the specified score range.
    */
   @Override
@@ -2250,31 +2261,11 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     return getTupledSet();
   }
 
-  private Set<Tuple> getTupledSet() {
-    checkIsInMultiOrPipeline();
-    List<String> membersWithScores = client.getMultiBulkReply();
-    if (membersWithScores == null) {
-      return Collections.emptySet();
-    }
-    if (membersWithScores.isEmpty()) {
-      return Collections.emptySet();
-    }
-    Set<Tuple> set = new LinkedHashSet<Tuple>(membersWithScores.size() / 2, 1.0f);
-    Iterator<String> iterator = membersWithScores.iterator();
-    while (iterator.hasNext()) {
-      set.add(new Tuple(iterator.next(), Double.valueOf(iterator.next())));
-    }
-    return set;
-  }
-
   @Override
   public Set<String> zrevrangeByScore(final String key, final double max, final double min) {
     checkIsInMultiOrPipeline();
     client.zrevrangeByScore(key, max, min);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2283,9 +2274,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrevrangeByScore(key, max, min);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2295,9 +2283,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrevrangeByScore(key, max, min, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2330,9 +2315,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrevrangeByScore(key, max, min, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2352,11 +2334,15 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * <p>
    * <b>Time complexity:</b> O(log(N))+O(M) with N being the number of elements in the sorted set
    * and M the number of elements removed by the operation
+   * @param key
+   * @param start
+   * @param stop
+   * @return
    */
   @Override
-  public Long zremrangeByRank(final String key, final long start, final long end) {
+  public Long zremrangeByRank(final String key, final long start, final long stop) {
     checkIsInMultiOrPipeline();
-    client.zremrangeByRank(key, start, end);
+    client.zremrangeByRank(key, start, stop);
     return client.getIntegerReply();
   }
 
@@ -2369,21 +2355,21 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * O(log(N))+O(M) with N being the number of elements in the sorted set and M the number of
    * elements removed by the operation
    * @param key
-   * @param start
-   * @param end
+   * @param min
+   * @param max
    * @return Integer reply, specifically the number of elements removed.
    */
   @Override
-  public Long zremrangeByScore(final String key, final double start, final double end) {
+  public Long zremrangeByScore(final String key, final double min, final double max) {
     checkIsInMultiOrPipeline();
-    client.zremrangeByScore(key, start, end);
+    client.zremrangeByScore(key, min, max);
     return client.getIntegerReply();
   }
 
   @Override
-  public Long zremrangeByScore(final String key, final String start, final String end) {
+  public Long zremrangeByScore(final String key, final String min, final String max) {
     checkIsInMultiOrPipeline();
-    client.zremrangeByScore(key, start, end);
+    client.zremrangeByScore(key, min, max);
     return client.getIntegerReply();
   }
 
@@ -2549,9 +2535,6 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByLex(key, min, max);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2561,31 +2544,23 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     checkIsInMultiOrPipeline();
     client.zrangeByLex(key, min, max, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
   @Override
-  public Set<String> zrevrangeByLex(String key, String max, String min) {
+  public Set<String> zrevrangeByLex(final String key, final String max, final String min) {
     checkIsInMultiOrPipeline();
     client.zrevrangeByLex(key, max, min);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
   @Override
-  public Set<String> zrevrangeByLex(String key, String max, String min, int offset, int count) {
+  public Set<String> zrevrangeByLex(final String key, final String max, final String min,
+      final int offset, final int count) {
     checkIsInMultiOrPipeline();
     client.zrevrangeByLex(key, max, min, offset, count);
     final List<String> members = client.getMultiBulkReply();
-    if (members == null) {
-      return Collections.emptySet();
-    }
     return SetFromList.of(members);
   }
 
@@ -2598,12 +2573,14 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
 
   @Override
   public Long strlen(final String key) {
+    checkIsInMultiOrPipeline();
     client.strlen(key);
     return client.getIntegerReply();
   }
 
   @Override
   public Long lpushx(final String key, final String... string) {
+    checkIsInMultiOrPipeline();
     client.lpushx(key, string);
     return client.getIntegerReply();
   }
@@ -2624,19 +2601,22 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
 
   @Override
   public Long rpushx(final String key, final String... string) {
+    checkIsInMultiOrPipeline();
     client.rpushx(key, string);
     return client.getIntegerReply();
   }
 
   @Override
   public String echo(final String string) {
+    checkIsInMultiOrPipeline();
     client.echo(string);
     return client.getBulkReply();
   }
 
   @Override
-  public Long linsert(final String key, final LIST_POSITION where, final String pivot,
+  public Long linsert(final String key, final ListPosition where, final String pivot,
       final String value) {
+    checkIsInMultiOrPipeline();
     client.linsert(key, where, pivot, value);
     return client.getIntegerReply();
   }
@@ -2649,7 +2629,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return the element
    */
   @Override
-  public String brpoplpush(String source, String destination, int timeout) {
+  public String brpoplpush(final String source, final String destination, final int timeout) {
     client.brpoplpush(source, destination, timeout);
     client.setTimeoutInfinite();
     try {
@@ -2667,13 +2647,15 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return
    */
   @Override
-  public Boolean setbit(String key, long offset, boolean value) {
+  public Boolean setbit(final String key, final long offset, final boolean value) {
+    checkIsInMultiOrPipeline();
     client.setbit(key, offset, value);
     return client.getIntegerReply() == 1;
   }
 
   @Override
-  public Boolean setbit(String key, long offset, String value) {
+  public Boolean setbit(final String key, final long offset, final String value) {
+    checkIsInMultiOrPipeline();
     client.setbit(key, offset, value);
     return client.getIntegerReply() == 1;
   }
@@ -2685,19 +2667,22 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return
    */
   @Override
-  public Boolean getbit(String key, long offset) {
+  public Boolean getbit(final String key, final long offset) {
+    checkIsInMultiOrPipeline();
     client.getbit(key, offset);
     return client.getIntegerReply() == 1;
   }
 
   @Override
-  public Long setrange(String key, long offset, String value) {
+  public Long setrange(final String key, final long offset, final String value) {
+    checkIsInMultiOrPipeline();
     client.setrange(key, offset, value);
     return client.getIntegerReply();
   }
 
   @Override
-  public String getrange(String key, long startOffset, long endOffset) {
+  public String getrange(final String key, final long startOffset, final long endOffset) {
+    checkIsInMultiOrPipeline();
     client.getrange(key, startOffset, endOffset);
     return client.getBulkReply();
   }
@@ -2709,6 +2694,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
 
   @Override
   public Long bitpos(final String key, final boolean value, final BitPosParams params) {
+    checkIsInMultiOrPipeline();
     client.bitpos(key, value, params);
     return client.getIntegerReply();
   }
@@ -2769,12 +2755,12 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * Redis configuration file, with the following exceptions:
    * <p>
    * <ul>
-   * <li>The save paramter is a list of space-separated integers. Every pair of integers specify the
-   * time and number of changes limit to trigger a save. For instance the command CONFIG SET save
-   * "3600 10 60 10000" will configure the server to issue a background saving of the RDB file every
-   * 3600 seconds if there are at least 10 changes in the dataset, and every 60 seconds if there are
-   * at least 10000 changes. To completely disable automatic snapshots just set the parameter as an
-   * empty string.
+   * <li>The save parameter is a list of space-separated integers. Every pair of integers specify
+   * the time and number of changes limit to trigger a save. For instance the command CONFIG SET
+   * save "3600 10 60 10000" will configure the server to issue a background saving of the RDB file
+   * every 3600 seconds if there are at least 10 changes in the dataset, and every 60 seconds if
+   * there are at least 10000 changes. To completely disable automatic snapshots just set the
+   * parameter as an empty string.
    * <li>All the integer parameters representing memory are returned and accepted only using bytes
    * as unit.
    * </ul>
@@ -2789,7 +2775,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Object eval(String script, int keyCount, String... params) {
+  public Object eval(final String script, final int keyCount, final String... params) {
     client.setTimeoutInfinite();
     try {
       client.eval(script, keyCount, params);
@@ -2844,18 +2830,18 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Object eval(String script, List<String> keys, List<String> args) {
+  public Object eval(final String script, final List<String> keys, final List<String> args) {
     return eval(script, keys.size(), getParams(keys, args));
   }
 
   @Override
-  public Object eval(String script) {
+  public Object eval(final String script) {
     return eval(script, 0);
   }
 
   @Override
-  public Object evalsha(String script) {
-    return evalsha(script, 0);
+  public Object evalsha(final String sha1) {
+    return evalsha(sha1, 0);
   }
 
   private Object getEvalResult() {
@@ -2879,26 +2865,26 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Object evalsha(String sha1, List<String> keys, List<String> args) {
+  public Object evalsha(final String sha1, final List<String> keys, final List<String> args) {
     return evalsha(sha1, keys.size(), getParams(keys, args));
   }
 
   @Override
-  public Object evalsha(String sha1, int keyCount, String... params) {
+  public Object evalsha(final String sha1, final int keyCount, final String... params) {
     checkIsInMultiOrPipeline();
     client.evalsha(sha1, keyCount, params);
     return getEvalResult();
   }
 
   @Override
-  public Boolean scriptExists(String sha1) {
+  public Boolean scriptExists(final String sha1) {
     String[] a = new String[1];
     a[0] = sha1;
     return scriptExists(a).get(0);
   }
 
   @Override
-  public List<Boolean> scriptExists(String... sha1) {
+  public List<Boolean> scriptExists(final String... sha1) {
     client.scriptExists(sha1);
     List<Long> result = client.getIntegerMultiBulkReply();
     List<Boolean> exists = new ArrayList<Boolean>();
@@ -2910,7 +2896,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public String scriptLoad(String script) {
+  public String scriptLoad(final String script) {
     client.scriptLoad(script);
     return client.getBulkReply();
   }
@@ -2922,43 +2908,46 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<Slowlog> slowlogGet(long entries) {
+  public List<Slowlog> slowlogGet(final long entries) {
     client.slowlogGet(entries);
     return Slowlog.from(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public Long objectRefcount(String string) {
-    client.objectRefcount(string);
+  public Long objectRefcount(final String key) {
+    client.objectRefcount(key);
     return client.getIntegerReply();
   }
 
   @Override
-  public String objectEncoding(String string) {
-    client.objectEncoding(string);
+  public String objectEncoding(final String key) {
+    client.objectEncoding(key);
     return client.getBulkReply();
   }
 
   @Override
-  public Long objectIdletime(String string) {
-    client.objectIdletime(string);
+  public Long objectIdletime(final String key) {
+    client.objectIdletime(key);
     return client.getIntegerReply();
   }
 
   @Override
   public Long bitcount(final String key) {
+    checkIsInMultiOrPipeline();
     client.bitcount(key);
     return client.getIntegerReply();
   }
 
   @Override
-  public Long bitcount(final String key, long start, long end) {
+  public Long bitcount(final String key, final long start, final long end) {
+    checkIsInMultiOrPipeline();
     client.bitcount(key, start, end);
     return client.getIntegerReply();
   }
 
   @Override
-  public Long bitop(BitOP op, final String destKey, String... srcKeys) {
+  public Long bitop(final BitOP op, final String destKey, final String... srcKeys) {
+    checkIsInMultiOrPipeline();
     client.bitop(op, destKey, srcKeys);
     return client.getIntegerReply();
   }
@@ -3017,7 +3006,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return two elements list of strings : host and port.
    */
   @Override
-  public List<String> sentinelGetMasterAddrByName(String masterName) {
+  public List<String> sentinelGetMasterAddrByName(final String masterName) {
     client.sentinel(Protocol.SENTINEL_GET_MASTER_ADDR_BY_NAME, masterName);
     final List<Object> reply = client.getObjectMultiBulkReply();
     return BuilderFactory.STRING_LIST.build(reply);
@@ -3032,7 +3021,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    * @return
    */
   @Override
-  public Long sentinelReset(String pattern) {
+  public Long sentinelReset(final String pattern) {
     client.sentinel(Protocol.SENTINEL_RESET, pattern);
     return client.getIntegerReply();
   }
@@ -3074,7 +3063,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
    */
   @Override
   @SuppressWarnings("rawtypes")
-  public List<Map<String, String>> sentinelSlaves(String masterName) {
+  public List<Map<String, String>> sentinelSlaves(final String masterName) {
     client.sentinel(Protocol.SENTINEL_SLAVES, masterName);
     final List<Object> reply = client.getObjectMultiBulkReply();
 
@@ -3086,26 +3075,27 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public String sentinelFailover(String masterName) {
+  public String sentinelFailover(final String masterName) {
     client.sentinel(Protocol.SENTINEL_FAILOVER, masterName);
     return client.getStatusCodeReply();
   }
 
   @Override
-  public String sentinelMonitor(String masterName, String ip, int port, int quorum) {
+  public String sentinelMonitor(final String masterName, final String ip, final int port,
+      final int quorum) {
     client.sentinel(Protocol.SENTINEL_MONITOR, masterName, ip, String.valueOf(port),
       String.valueOf(quorum));
     return client.getStatusCodeReply();
   }
 
   @Override
-  public String sentinelRemove(String masterName) {
+  public String sentinelRemove(final String masterName) {
     client.sentinel(Protocol.SENTINEL_REMOVE, masterName);
     return client.getStatusCodeReply();
   }
 
   @Override
-  public String sentinelSet(String masterName, Map<String, String> parameterMap) {
+  public String sentinelSet(final String masterName, final Map<String, String> parameterMap) {
     int index = 0;
     int paramsLength = parameterMap.size() * 2 + 2;
     String[] params = new String[paramsLength];
@@ -3121,15 +3111,24 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     return client.getStatusCodeReply();
   }
 
+  @Override
   public byte[] dump(final String key) {
     checkIsInMultiOrPipeline();
     client.dump(key);
     return client.getBinaryBulkReply();
   }
 
+  @Override
   public String restore(final String key, final int ttl, final byte[] serializedValue) {
     checkIsInMultiOrPipeline();
     client.restore(key, ttl, serializedValue);
+    return client.getStatusCodeReply();
+  }
+
+  @Override
+  public String restoreReplace(final String key, final int ttl, final byte[] serializedValue) {
+    checkIsInMultiOrPipeline();
+    client.restoreReplace(key, ttl, serializedValue);
     return client.getStatusCodeReply();
   }
 
@@ -3170,22 +3169,47 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     return client.getStatusCodeReply();
   }
 
-  public String clientKill(final String client) {
+  @Override
+  public String clientKill(final String ipPort) {
     checkIsInMultiOrPipeline();
-    this.client.clientKill(client);
+    this.client.clientKill(ipPort);
     return this.client.getStatusCodeReply();
   }
 
+  @Override
+  public String clientGetname() {
+    checkIsInMultiOrPipeline();
+    client.clientGetname();
+    return client.getBulkReply();
+  }
+
+  @Override
+  public String clientList() {
+    checkIsInMultiOrPipeline();
+    client.clientList();
+    return client.getBulkReply();
+  }
+
+  @Override
   public String clientSetname(final String name) {
     checkIsInMultiOrPipeline();
     client.clientSetname(name);
     return client.getStatusCodeReply();
   }
 
+  @Override
   public String migrate(final String host, final int port, final String key,
       final int destinationDb, final int timeout) {
     checkIsInMultiOrPipeline();
     client.migrate(host, port, key, destinationDb, timeout);
+    return client.getStatusCodeReply();
+  }
+
+  @Override
+  public String migrate(final String host, final int port, final int destinationDB,
+      final int timeout, final MigrateParams params, final String... keys) {
+    checkIsInMultiOrPipeline();
+    client.migrate(host, port, destinationDB, timeout, params, keys);
     return client.getStatusCodeReply();
   }
 
@@ -3264,8 +3288,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     List<byte[]> rawResults = (List<byte[]>) result.get(1);
     Iterator<byte[]> iterator = rawResults.iterator();
     while (iterator.hasNext()) {
-      results.add(new Tuple(SafeEncoder.encode(iterator.next()), Double.valueOf(SafeEncoder
-          .encode(iterator.next()))));
+      results.add(new Tuple(iterator.next(), BuilderFactory.DOUBLE.build(iterator.next())));
     }
     return new ScanResult<Tuple>(newcursor, results);
   }
@@ -3291,7 +3314,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public String clusterReset(final Reset resetType) {
+  public String clusterReset(final ClusterReset resetType) {
     checkIsInMultiOrPipeline();
     client.clusterReset(resetType);
     return client.getStatusCodeReply();
@@ -3422,7 +3445,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
     return client.getStatusCodeReply();
   }
 
-  public List<String> pubsubChannels(String pattern) {
+  public List<String> pubsubChannels(final String pattern) {
     checkIsInMultiOrPipeline();
     client.pubsubChannels(pattern);
     return client.getMultiBulkReply();
@@ -3443,13 +3466,15 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   @Override
   public void close() {
     if (dataSource != null) {
+      JedisPoolAbstract pool = this.dataSource;
+      this.dataSource = null;
       if (client.isBroken()) {
-        this.dataSource.returnBrokenResource(this);
+        pool.returnBrokenResource(this);
       } else {
-        this.dataSource.returnResource(this);
+        pool.returnResource(this);
       }
     } else {
-      client.close();
+      super.close();
     }
   }
 
@@ -3472,7 +3497,7 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public long pfcount(String... keys) {
+  public long pfcount(final String... keys) {
     checkIsInMultiOrPipeline();
     client.pfcount(keys);
     return client.getIntegerReply();
@@ -3486,31 +3511,32 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<String> blpop(int timeout, String key) {
+  public List<String> blpop(final int timeout, final String key) {
     return blpop(key, String.valueOf(timeout));
   }
 
   @Override
-  public List<String> brpop(int timeout, String key) {
+  public List<String> brpop(final int timeout, final String key) {
     return brpop(key, String.valueOf(timeout));
   }
 
   @Override
-  public Long geoadd(String key, double longitude, double latitude, String member) {
+  public Long geoadd(final String key, final double longitude, final double latitude,
+      final String member) {
     checkIsInMultiOrPipeline();
     client.geoadd(key, longitude, latitude, member);
     return client.getIntegerReply();
   }
 
   @Override
-  public Long geoadd(String key, Map<String, GeoCoordinate> memberCoordinateMap) {
+  public Long geoadd(final String key, final Map<String, GeoCoordinate> memberCoordinateMap) {
     checkIsInMultiOrPipeline();
     client.geoadd(key, memberCoordinateMap);
     return client.getIntegerReply();
   }
 
   @Override
-  public Double geodist(String key, String member1, String member2) {
+  public Double geodist(final String key, final String member1, final String member2) {
     checkIsInMultiOrPipeline();
     client.geodist(key, member1, member2);
     String dval = client.getBulkReply();
@@ -3518,7 +3544,8 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public Double geodist(String key, String member1, String member2, GeoUnit unit) {
+  public Double geodist(final String key, final String member1, final String member2,
+      final GeoUnit unit) {
     checkIsInMultiOrPipeline();
     client.geodist(key, member1, member2, unit);
     String dval = client.getBulkReply();
@@ -3526,59 +3553,91 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<String> geohash(String key, String... members) {
+  public List<String> geohash(final String key, String... members) {
     checkIsInMultiOrPipeline();
     client.geohash(key, members);
     return client.getMultiBulkReply();
   }
 
   @Override
-  public List<GeoCoordinate> geopos(String key, String... members) {
+  public List<GeoCoordinate> geopos(final String key, String... members) {
     checkIsInMultiOrPipeline();
     client.geopos(key, members);
     return BuilderFactory.GEO_COORDINATE_LIST.build(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public List<GeoRadiusResponse> georadius(String key, double longitude, double latitude,
-      double radius, GeoUnit unit) {
+  public List<GeoRadiusResponse> georadius(final String key, final double longitude,
+      final double latitude, final double radius, final GeoUnit unit) {
     checkIsInMultiOrPipeline();
     client.georadius(key, longitude, latitude, radius, unit);
     return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public List<GeoRadiusResponse> georadius(String key, double longitude, double latitude,
-      double radius, GeoUnit unit, GeoRadiusParam param) {
+  public List<GeoRadiusResponse> georadiusReadonly(final String key, final double longitude,
+      final double latitude, final double radius, final GeoUnit unit) {
+    checkIsInMultiOrPipeline();
+    client.georadiusReadonly(key, longitude, latitude, radius, unit);
+    return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
+  }
+
+  @Override
+  public List<GeoRadiusResponse> georadius(final String key, final double longitude,
+      final double latitude, final double radius, final GeoUnit unit, final GeoRadiusParam param) {
     checkIsInMultiOrPipeline();
     client.georadius(key, longitude, latitude, radius, unit, param);
     return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public List<GeoRadiusResponse> georadiusByMember(String key, String member, double radius,
-      GeoUnit unit) {
+  public List<GeoRadiusResponse> georadiusReadonly(final String key, final double longitude,
+      final double latitude, final double radius, final GeoUnit unit, final GeoRadiusParam param) {
+    checkIsInMultiOrPipeline();
+    client.georadiusReadonly(key, longitude, latitude, radius, unit, param);
+    return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
+  }
+
+  @Override
+  public List<GeoRadiusResponse> georadiusByMember(final String key, final String member,
+      final double radius, final GeoUnit unit) {
     checkIsInMultiOrPipeline();
     client.georadiusByMember(key, member, radius, unit);
     return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public List<GeoRadiusResponse> georadiusByMember(String key, String member, double radius,
-      GeoUnit unit, GeoRadiusParam param) {
+  public List<GeoRadiusResponse> georadiusByMemberReadonly(final String key, final String member,
+      final double radius, final GeoUnit unit) {
+    checkIsInMultiOrPipeline();
+    client.georadiusByMemberReadonly(key, member, radius, unit);
+    return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
+  }
+
+  @Override
+  public List<GeoRadiusResponse> georadiusByMember(final String key, final String member,
+      final double radius, final GeoUnit unit, final GeoRadiusParam param) {
     checkIsInMultiOrPipeline();
     client.georadiusByMember(key, member, radius, unit, param);
     return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
   }
 
   @Override
-  public String moduleLoad(String path) {
+  public List<GeoRadiusResponse> georadiusByMemberReadonly(final String key, final String member,
+      final double radius, final GeoUnit unit, final GeoRadiusParam param) {
+    checkIsInMultiOrPipeline();
+    client.georadiusByMemberReadonly(key, member, radius, unit, param);
+    return BuilderFactory.GEORADIUS_WITH_PARAMS_RESULT.build(client.getObjectMultiBulkReply());
+  }
+
+  @Override
+  public String moduleLoad(final String path) {
     client.moduleLoad(path);
     return client.getStatusCodeReply();
   }
 
   @Override
-  public String moduleUnload(String name) {
+  public String moduleUnload(final String name) {
     client.moduleUnload(name);
     return client.getStatusCodeReply();
   }
@@ -3590,17 +3649,201 @@ public class Jedis extends BinaryJedis implements JedisCommands, MultiKeyCommand
   }
 
   @Override
-  public List<Long> bitfield(String key, String...arguments) {
+  public List<Long> bitfield(final String key, final String... arguments) {
     checkIsInMultiOrPipeline();
     client.bitfield(key, arguments);
     return client.getIntegerMultiBulkReply();
   }
 
   @Override
-  public Long hstrlen(String key, String field) {
+  public Long hstrlen(final String key, final String field) {
     checkIsInMultiOrPipeline();
     client.hstrlen(key, field);
     return client.getIntegerReply();
   }
 
+  @Override
+  public String memoryDoctor() {
+    checkIsInMultiOrPipeline();
+    client.memoryDoctor();
+    return client.getBulkReply();
+  }
+
+  @Override
+  public StreamEntryID xadd(final String key, final StreamEntryID id, final Map<String, String> hash) {
+    return xadd(key, id, hash, Long.MAX_VALUE, false);
+  }
+
+  @Override
+  public StreamEntryID xadd(final String key, StreamEntryID id, final Map<String, String> hash,
+      final long maxLen, final boolean approximateLength) {
+    checkIsInMultiOrPipeline();
+    client.xadd(key, id, hash, maxLen, approximateLength);
+    String result = client.getBulkReply();
+    return new StreamEntryID(result);
+  }
+
+  @Override
+  public Long xlen(final String key) {
+    checkIsInMultiOrPipeline();
+    client.xlen(key);
+    return client.getIntegerReply();
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public List<StreamEntry> xrange(final String key, final StreamEntryID start,
+      final StreamEntryID end, final int count) {
+    checkIsInMultiOrPipeline();
+    client.xrange(key, start, end, count);
+    return BuilderFactory.STREAM_ENTRY_LIST.build(client.getObjectMultiBulkReply());
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public List<StreamEntry> xrevrange(final String key, final StreamEntryID end,
+      final StreamEntryID start, final int count) {
+    checkIsInMultiOrPipeline();
+    client.xrevrange(key, end, start, count);
+    return BuilderFactory.STREAM_ENTRY_LIST.build(client.getObjectMultiBulkReply());
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public List<Entry<String, List<StreamEntry>>> xread(final int count, final long block,
+      final Entry<String, StreamEntryID>... streams) {
+    checkIsInMultiOrPipeline();
+    client.xread(count, block, streams);
+    client.setTimeoutInfinite();
+
+    try {
+      List<Object> streamsEntries = client.getObjectMultiBulkReply();
+      if (streamsEntries == null) {
+        return new ArrayList<>();
+      }
+
+      List<Entry<String, List<StreamEntry>>> result = new ArrayList<>(streamsEntries.size());
+      for (Object streamObj : streamsEntries) {
+        List<Object> stream = (List<Object>) streamObj;
+        String streamId = SafeEncoder.encode((byte[]) stream.get(0));
+        List<StreamEntry> streamEntries = BuilderFactory.STREAM_ENTRY_LIST.build(stream.get(1));
+        result.add(new AbstractMap.SimpleEntry<String, List<StreamEntry>>(streamId, streamEntries));
+      }
+
+      return result;
+    } finally {
+      client.rollbackTimeout();
+    }
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public long xack(final String key, final String group, final StreamEntryID... ids) {
+    checkIsInMultiOrPipeline();
+    client.xack(key, group, ids);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public String xgroupCreate(final String key, final String groupname, final StreamEntryID id,
+      final boolean makeStream) {
+    checkIsInMultiOrPipeline();
+    client.xgroupCreate(key, groupname, id, makeStream);
+    return client.getStatusCodeReply();
+  }
+
+  @Override
+  public String xgroupSetID(final String key, final String groupname, final StreamEntryID id) {
+    checkIsInMultiOrPipeline();
+    client.xgroupSetID(key, groupname, id);
+    return client.getStatusCodeReply();
+  }
+
+  @Override
+  public long xgroupDestroy(final String key, final String groupname) {
+    checkIsInMultiOrPipeline();
+    client.xgroupDestroy(key, groupname);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public String xgroupDelConsumer(final String key, final String groupname,
+      final String consumerName) {
+    checkIsInMultiOrPipeline();
+    client.xgroupDelConsumer(key, groupname, consumerName);
+    return client.getStatusCodeReply();
+  }
+
+  @Override
+  public long xdel(final String key, final StreamEntryID... ids) {
+    checkIsInMultiOrPipeline();
+    client.xdel(key, ids);
+    return client.getIntegerReply();
+  }
+
+  @Override
+  public long xtrim(final String key, final long maxLen, final boolean approximateLength) {
+    checkIsInMultiOrPipeline();
+    client.xtrim(key, maxLen, approximateLength);
+    return client.getIntegerReply();
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public List<Entry<String, List<StreamEntry>>> xreadGroup(final String groupname,
+      final String consumer, final int count, final long block, final boolean noAck,
+      final Entry<String, StreamEntryID>... streams) {
+    checkIsInMultiOrPipeline();
+    client.xreadGroup(groupname, consumer, count, block, noAck, streams);
+
+    List<Object> streamsEntries = client.getObjectMultiBulkReply();
+    if (streamsEntries == null) {
+      return null;
+    }
+
+    List<Entry<String, List<StreamEntry>>> result = new ArrayList<>(streamsEntries.size());
+    for (Object streamObj : streamsEntries) {
+      List<Object> stream = (List<Object>) streamObj;
+      String streamId = SafeEncoder.encode((byte[]) stream.get(0));
+      List<StreamEntry> streamEntries = BuilderFactory.STREAM_ENTRY_LIST.build(stream.get(1));
+      result.add(new AbstractMap.SimpleEntry<String, List<StreamEntry>>(streamId, streamEntries));
+    }
+    return result;
+  }
+
+  @Override
+  public List<StreamPendingEntry> xpending(final String key, final String groupname,
+      final StreamEntryID start, final StreamEntryID end, final int count, final String consumername) {
+    checkIsInMultiOrPipeline();
+    client.xpending(key, groupname, start, end, count, consumername);
+
+    // TODO handle consumername == NULL case
+
+    return BuilderFactory.STREAM_PENDING_ENTRY_LIST.build(client.getObjectMultiBulkReply());
+  }
+
+  @Override
+  public List<StreamEntry> xclaim(String key, String group, String consumername, long minIdleTime,
+      long newIdleTime, int retries, boolean force, StreamEntryID... ids) {
+
+    checkIsInMultiOrPipeline();
+    client.xclaim(key, group, consumername, minIdleTime, newIdleTime, retries, force, ids);
+
+    return BuilderFactory.STREAM_ENTRY_LIST.build(client.getObjectMultiBulkReply());
+  }
+
+  public Object sendCommand(ProtocolCommand cmd, String... args) {
+    client.sendCommand(cmd, args);
+    return client.getOne();
+  }
 }

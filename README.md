@@ -1,4 +1,9 @@
+[![GitHub issues](https://img.shields.io/github/release/xetorthio/jedis.svg)](https://github.com/xetorthio/jedis/releases/latest)
 [![Build Status](https://travis-ci.org/xetorthio/jedis.png?branch=master)](https://travis-ci.org/xetorthio/jedis)
+[![Maven Central](https://img.shields.io/maven-central/v/redis.clients/jedis.svg)](http://mvnrepository.com/artifact/redis.clients/jedis)
+[![Javadocs](https://www.javadoc.io/badge/redis.clients/jedis.svg)](https://www.javadoc.io/doc/redis.clients/jedis)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.txt)
+[![Gitter](https://badges.gitter.im/xetorthio/jedis.svg)](https://gitter.im/xetorthio/jedis?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 # Jedis
 
@@ -6,7 +11,9 @@ Jedis is a blazingly small and sane [Redis](http://github.com/antirez/redis "Red
 
 Jedis was conceived to be EASY to use.
 
-Jedis is fully compatible with redis 2.8.x and 3.0.x.
+Jedis is fully compatible with redis 2.8.x, 3.x.x and above*.
+
+*There are still couple of new functionalities added Redis 5 missing in Jedis like Streams.
 
 ## Community
 
@@ -44,15 +51,50 @@ You can download the latest build at:
 
 Or use it as a maven dependency:
 
+### Official Releases
+
 ```xml
 <dependency>
     <groupId>redis.clients</groupId>
     <artifactId>jedis</artifactId>
-    <version>2.9.0</version>
+    <version>3.1.0</version>
     <type>jar</type>
     <scope>compile</scope>
 </dependency>
 ```
+
+```xml
+<dependency>
+    <groupId>redis.clients</groupId>
+    <artifactId>jedis</artifactId>
+    <version>2.10.2</version>
+    <type>jar</type>
+    <scope>compile</scope>
+</dependency>
+```
+
+### Snapshots
+
+```xml
+  <repositories>
+    <repository>
+      <id>snapshots-repo</id>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    </repository>
+  </repositories>
+```
+
+and
+```xml
+  <dependencies>
+    <dependency>
+      <groupId>redis.clients</groupId>
+      <artifactId>jedis</artifactId>
+      <version>3.2.0-SNAPSHOT</version>
+    </dependency>
+  </dependencies>
+```
+
 
 To use it just:
     
@@ -96,7 +138,7 @@ Please check the [WIKI](https://github.com/xetorthio/jedis/wiki) for more useful
 
 That is great!
 
-Please see CONTRIBUTING.md on project's root directory for follow up how to contribute to Jedis project.
+Please see [CONTRIBUTING.md](https://github.com/xetorthio/jedis/blob/master/.github/CONTRIBUTING.md) on project's root directory for follow up how to contribute to Jedis project.
 
 Thanks for helping!
 

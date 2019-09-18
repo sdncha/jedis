@@ -13,7 +13,7 @@ import java.util.List;
 
 import redis.clients.jedis.exceptions.JedisConnectionException;
 import redis.clients.jedis.exceptions.JedisException;
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.util.SafeEncoder;
 
 public abstract class JedisPubSub {
 
@@ -120,7 +120,7 @@ public abstract class JedisPubSub {
   private void process(Client client) {
 
     do {
-      List<Object> reply = client.getRawObjectMultiBulkReply();
+      List<Object> reply = client.getUnflushedObjectMultiBulkReply();
       final Object firstObj = reply.get(0);
       if (!(firstObj instanceof byte[])) {
         throw new JedisException("Unknown message type: " + firstObj);

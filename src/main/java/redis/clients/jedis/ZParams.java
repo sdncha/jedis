@@ -8,7 +8,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import redis.clients.util.SafeEncoder;
+import redis.clients.jedis.util.SafeEncoder;
 
 public class ZParams {
   public enum Aggregate {
@@ -26,6 +26,7 @@ public class ZParams {
   /**
    * Set weights.
    * @param weights weights.
+   * @return
    */
   public ZParams weights(final double... weights) {
     params.add(WEIGHTS.raw);
